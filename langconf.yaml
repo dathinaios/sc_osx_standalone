@@ -1,0 +1,7 @@
+includePaths:
+    - overwrites
+    - SCClassLibrary
+excludePaths:
+    - /Users/dathin/Library/Application Support/SuperCollider/Extensions
+    - /Applications/SuperCollider.app/Contents/Resources/SCClassLibrary
+postInlineWarnings: false
