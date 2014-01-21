@@ -6,4 +6,4 @@ excludePaths:
     - /Library/Application Support/SuperCollider/Extensions
     - /Applications/SuperCollider.app/Contents/Resources/SCClassLibrary
 postInlineWarnings: false" > langconf.yaml;
-./Resources/sclang -llangconf.yaml test1.scd
+./Resources/sclang -llangconf.yaml init.scd
