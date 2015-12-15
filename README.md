@@ -21,5 +21,5 @@ https://github.com/miguel-negrao/linuxStandalone
   - Open Platypus
   - Fill in the App name
   - Click the `Select Script` button and choose the `run.sh` file.
-  - Drag all the files from the `sc_osx_standalone-master` in the `Bundled Files` field.
+  - Drag all the files from the `sc_osx_standalone-master` to the `Bundled Files` field.
   - Click `Create` and choose the location for your app. 
