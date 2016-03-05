@@ -22,4 +22,5 @@ https://github.com/miguel-negrao/linuxStandalone
   - Fill in the App name
   - Click the `Select Script` button and choose the `run.sh` file.
   - Drag all the files from the `sc_osx_standalone-master` to the `Bundled Files` field.
+  - Optional: to hide the post window change the interface option from `Text Window` to `None`.
   - Click `Create` and choose the location for your app. 
