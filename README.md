@@ -24,3 +24,13 @@ https://github.com/miguel-negrao/linuxStandalone
   - Drag all the files from the `sc_osx_standalone-master` to the `Bundled Files` field.
   - Optional: to hide the post window change the interface option from `Text Window` to `None`.
   - Click `Create` and choose the location for your app. 
+
+##FAQ
+
+Q: Where do I put soundfiles and how do i access them.
+
+A: Put your files in the `Resources` directory. You can then access them using `Platform.resourceDir +/+ "path/to/your/file.wav");`
+
+Q: Where is the `3.7` version?
+
+A: There are some issues with linking the `QT` libraries in `3.7` that make it impossible to create the standalone for now. See [this thread](http://new-supercollider-mailing-lists-forums-use-these.2681727.n2.nabble.com/3-7-sc-osx-standalone-Qt-issue-td7624112.html) in the mailing list for more info.
