@@ -29,7 +29,7 @@ https://github.com/miguel-negrao/linuxStandalone
 
 Q: Where do I put soundfiles and how do i access them?
 
-A: Put your files in the `Resources` directory. You can then access them using `Platform.resourceDir ++ "path/to/your/file.wav");`
+A: Put your files in the `Resources` directory. You can then access them using `Platform.resourceDir ++ "/path/to/your/file.wav");`
 
 Q: Where is the `3.7` version?
 
