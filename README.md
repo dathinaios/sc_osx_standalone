@@ -25,7 +25,7 @@ https://github.com/miguel-negrao/scStandalone
   - Optional: to hide the post window change the interface option from `Text Window` to `None`.
   - Click `Create` and choose the location for your app. 
 
-##FAQ
+## FAQ
 
 Q: Where do I put soundfiles and how do i access them?
 
