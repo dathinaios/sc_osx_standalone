@@ -1,13 +1,11 @@
 	// basic gui for a nodeproxy, with monitor or not.
 
 NdefGui : JITGui {
-	classvar <buttonSizes;
+	classvar <buttonSizes, <buttonFuncs;
 
 	var <typeView, <fadeBox;
 	var <monitorGui, <pauseBut, <sendBut, <edBut, <wakeBut;
 	var <paramGui;
-
-	var <config, <buttonFuncs;
 
 	*initClass {
 		Class.initClassTree(Spec);
@@ -15,29 +13,53 @@ NdefGui : JITGui {
 		Spec.add(\fadePx, [0, 100, \amp, 0, 0.02]);
 
 		buttonSizes = (
-			name: 70, type: 30, CLR: 30, reset: 40, scope: 40, doc: 30, end: 30, fade: 70,
-			monitor: 200, monitorM: 250, monitorL: 300, playN: 20, pausR: 40, sendR: 40,
+			name: 70, type: 32, CLR: 32, reset: 40, scope: 40, doc: 30, end: 30, fade: 70,
+			monitor: 200, monitorM: 250, monitorL: 300, play: 20, pausR: 40, sendR: 40,
 			ed: 20, rip: 20, poll: 35, wake: 50
 		);
+
+		this.makeButFuncs;
 	}
 
 	proxy_ { |proxy| ^this.object_(proxy) }
 	proxy { ^this.object }
-	edits { ^paramGui.widgets }
+	edits { ^paramGui.paramViews }
 
 	editKeys {
 		if (paramGui.isNil) { ^[] };
 		^paramGui.editKeys;
 	}
 
-	highlightParams { |parOffset, num|
-		var onCol = Color(1, 0.5, 0.5), offCol = Color.clear, col;
-		{ paramGui.widgets.do { |widget, i|
-			if (widget.notNil) {
-				col = if (i >= parOffset and: (i < (parOffset + num).max(0)), onCol, offCol);
-				widget.labelView.background_(col.green_([0.5, 0.7].wrapAt(i - parOffset div: 2)));
+	highlightName { |prefix = "", color|
+		nameView.string = prefix ++ try { this.object.key } ;
+		nameView.background_(color ? skin.onColor2);
+	}
+
+	unhighlightName {
+		nameView.string = try { this.object.key } ? "";
+		nameView.background_(skin.foreground);
+	}
+
+	highlight { |index, prefix, color|
+		paramGui.highlight(index, prefix, color);
+	}
+
+	unhighlight { |index| paramGui.unhighlight(index); }
+
+	// highlight a block of adjacent sliders, used by NanoKtl etc
+	highlightParams { |parOffset, num, highNames, clearOthers = true|
+		var onCol = skin.onColor2;
+		var highIndices = (0..num-1) + parOffset;
+
+		defer {
+			paramGui.paramViews.do {|widget, i|
+				if(highIndices.includes(i)) {
+					paramGui.highlight(i, highNames[i-parOffset],onCol);
+				} {
+					paramGui.unhighlight(i);
+				}
 			}
-		} }.defer;
+		};
 	}
 
 	*new { |object, numItems = (4), parent, bounds, makeSkip=true, options|
@@ -48,18 +70,25 @@ NdefGui : JITGui {
 	*big {
 			// two lines - for big editor
 		^[\name, \type, \CLR, \reset, \scope, \doc, \end, \fade, \poll,
-			\monitorL, \playN, \pausR, \sendR  ]
+			\monitorL, /*\play,*/ \pausR, \sendR
+		]
 	}
 
 	*full {
 			// two lines - for big editor
 		^[\name, \type, \CLR, \reset, \scope, \doc, \end, \fade, \poll, \rip,
-			\monitorL, \playN, \pausR, \sendR, ]
+			\monitorL, /*\play,*/ \pausR, \sendR, ]
 	}
 
 	*audio {
 			// one line, for ProxyMixer, ar
-		^[\monitorM, \playN, \name, \pausR, \sendR, \ed]
+		^[\monitorM, /*\play,*/ \name, \pausR, \sendR, \ed]
+	}
+
+			// smaller fader for small screen proxymixer
+	*audioSm {
+			// one line, for small ProxyMixer arZone
+		^[\monitor, /*\play,*/ \name, \pausR, \sendR, \ed]
 	}
 
 	*control {
@@ -84,32 +113,32 @@ NdefGui : JITGui {
 	//	"NdefGui - width: % minSize: %\n".postf(width, minSize);
 
 		if (parent.notNil) { skin = skin.copy.margin = 0@0; };
-
-		this.makeButFuncs(options, skin.buttonHeight);
-
 	}
 
 
 
-	makeButFuncs { |options, height|
+	*makeButFuncs {
 		buttonFuncs = (
-			name: 	{ this.makeNameView(buttonSizes[\name], height) },
-			type: 	{ this.makeTypeView(buttonSizes[\type], height) },
-			CLR: 	{ this.makeClrBut(buttonSizes[\CLR], height) },
-			reset: 	{ this.makeResetBut(buttonSizes[\reset], height) },
-			scope: 	{ this.makeScopeBut(buttonSizes[\scope], height) },
-			doc: 	{ this.makeDocBut(buttonSizes[\doc], height) },
-			end: 	{ this.makeEndBut(buttonSizes[\end], height) },
-			fade: 	{ this.makeFadeBox(buttonSizes[\fade], height) },
-			monitor: 	{ this.makeMonitor(buttonSizes[\monitor], height, options) },
-			monitorM:{ this.makeMonitor(buttonSizes[\monitorM], height, options) },
-			monitorL:{ this.makeMonitor(buttonSizes[\monitorL], height, options) },
-			pausR: 	{ this.makePauseBut(buttonSizes[\pausR], height) },
-			sendR: 	{ this.makeSendBut(buttonSizes[\sendR], height) },
-			rip: 	{ this.makeRipBut(buttonSizes[\rip], height) },
-			ed: 		{ this.makeEdBut(buttonSizes[\ed], height) },
-			poll: 	{ this.makePollBut(buttonSizes[\poll], height) },
-			wake: 	{ this.makeWakeBut(buttonSizes[\wake], height) }
+			name: 	{ |ng, height| ng.makeNameView(buttonSizes[\name], height) },
+			type: 	{ |ng, height| ng.makeTypeView(buttonSizes[\type], height) },
+			CLR: 	{ |ng, height| ng.makeClrBut(buttonSizes[\CLR], height) },
+			reset: 	{ |ng, height| ng.makeResetBut(buttonSizes[\reset], height) },
+			scope: 	{ |ng, height| ng.makeScopeBut(buttonSizes[\scope], height) },
+			doc: 	{ |ng, height| ng.makeDocBut(buttonSizes[\doc], height) },
+			end: 	{ |ng, height| ng.makeEndBut(buttonSizes[\end], height) },
+			fade: 	{ |ng, height| ng.makeFadeBox(buttonSizes[\fade], height) },
+			monitor:{ |ng, height, options|
+				ng.makeMonitor(buttonSizes[\monitor], height, npOptions: options) },
+			monitorM:{|ng, height, options|
+				ng.makeMonitor(buttonSizes[\monitorM], height, npOptions: options) },
+			monitorL:{|ng, height, options|
+				ng.makeMonitor(buttonSizes[\monitorL], height, npOptions: options) },
+			pausR: 	{ |ng, height| ng.makePauseBut(buttonSizes[\pausR], height) },
+			sendR: 	{ |ng, height| ng.makeSendBut(buttonSizes[\sendR], height) },
+			rip: 	{ |ng, height| ng.makeRipBut(buttonSizes[\rip], height) },
+			ed: 		{ |ng, height| ng.makeEdBut(buttonSizes[\ed], height) },
+			poll: 	{ |ng, height| ng.makePollBut(buttonSizes[\poll], height) },
+			wake: 	{ |ng, height| ng.makeWakeBut(buttonSizes[\wake], height) }
 		)
 	}
 
@@ -121,10 +150,12 @@ NdefGui : JITGui {
 		var lineBreakIndex, hasName, hasMonitor, resizer, butLines;
 	//	"NdefGui - zone.bounds: % zone.decorator.margin: %\n".postf(zone.bounds, zone.decorator.margin);
 
-		options.do { |option| buttonFuncs[option].value; };
+		options.do { |option|
+			buttonFuncs[option].value(this, skin.buttonHeight, options);
+		};
 
 
-			// a clumsy way to figure out how to set resizes for all children.
+		// a clumsy way to figure out how to set resizes for all children.
 		lineBreakIndex = zone.children.detectIndex { |a, i|
 			var b = zone.children[i + 1];
 			b.notNil and: { b.bounds.left < a.bounds.left }
@@ -165,29 +196,29 @@ NdefGui : JITGui {
 		}
 	}
 
-	makeNameView { |nameWid, height|
-		try { // QT temp fix
-			nameView = DragBoth(zone, Rect(0,0, nameWid, height))
-			.font_(font).align_(0)
-			.receiveDragHandler_({
+	makeNameView { |width, height|
+			nameView = DragBoth(zone, Rect(0,0, width, height))
+			.font_(font).align_(\center)
+			.background_(skin.background)
+			.stringColor_(skin.fontColor);
+
+			nameView.receiveDragHandler_({
 				var drag = View.currentDrag;
 				if (drag.isKindOf(String)) { drag = drag.interpret };
 				this.object_(drag);
 			});
-		} {
-			nameView = TextView(zone, Rect(0,0, nameWid, height))
-		    .font_(font)
-		}
 	}
 
 	makeTypeView { |width, height|
 		typeView = StaticText(zone, width@height).string_("-").align_(0)
-			.font_(font).align_(0);
+		.background_(skin.background)
+		.stringColor_(skin.fontColor)
+		.font_(font).align_(\center);
 	}
 
 	makeClrBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\CLR, skin.fontColor, Color.clear]])
+			.states_([[\CLR, skin.fontColor, skin.offColor]])
 			.action_({ arg btn, mod;
 				if (mod.isAlt) { object.clear } {
 					"Safety - use alt-click to clear object.".postln;
@@ -197,14 +228,14 @@ NdefGui : JITGui {
 
 	makeWakeBut { |width, height|
 		wakeBut = Button(zone, width@height).font_(font)
-			.states_([[\WAKE, skin.fontColor, Color.clear],
+			.states_([[\WAKE, skin.fontColor, skin.offColor],
 				[\WAKE, skin.fontColor, skin.onColor]])
 			.action_({ object.resume.wakeUp; wakeBut.value_(1); })
 	}
 
 	makeResetBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\reset, skin.fontColor, Color.clear]])
+			.states_([[\reset, skin.fontColor, skin.offColor]])
 			.action_({ |view, mod|
 				object !? {
 					if (mod.notNil and: { mod.isAlt }) {
@@ -219,26 +250,28 @@ NdefGui : JITGui {
 
 	makeScopeBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\scope, skin.fontColor, Color.clear]])
+			.states_([[\scope, skin.fontColor, skin.offColor]])
 			.action_({ object !? { object.scope } })
 	}
 
 	makeDocBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\doc, skin.fontColor, Color.clear]])
+			.states_([[\doc, skin.fontColor, skin.offColor]])
 			.action_({ |but, mod|
+				var alt = mod.notNil and: { mod.isAlt };
 				if (object.notNil) {
-				if (mod.isAlt) {
-					try { ProxySpace.findSpace(object).document(object.key) };
-				} {
-					object.document;
-				} }
+						if (alt) {
+							try { ProxySpace.findSpace(object).document(object.key) };
+						} {
+							object.document;
+						}
+				}
 			})
 	}
 
 	makeEndBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\end, skin.fontColor, Color.clear]])
+			.states_([[\end, skin.fontColor, skin.offColor]])
 			.action_({ object !? {  object.end } })
 	}
 
@@ -250,12 +283,18 @@ NdefGui : JITGui {
 				numberWidth: width - 28
 		);
 
-		fadeBox.labelView.font_(font).background_(Color.clear);
-		fadeBox.numberView.font_(font).background_(Color.clear);
+		fadeBox.labelView.font_(font)
+			.background_(skin.background)
+			.stringColor_(skin.fontColor);
+
+		fadeBox.numberView.font_(font)
+			.background_(skin.background)
+			.stringColor_(skin.fontColor)
+		.refresh;
 	}
 
 	makeMonitor { |width, height, npOptions|
-		var monOptions = npOptions.sect([\level, \playN]);
+		var monOptions = npOptions.sect([\level, \play]);
 		monitorGui = MonitorGui(object, zone, width@height, false, monOptions);
 	}
 
@@ -287,18 +326,18 @@ NdefGui : JITGui {
 
 	makeEdBut { |width, height|
 		edBut = Button(zone, width@height).font_(font)
-			.states_([['ed', skin.fontColor, Color.clear], ['ed', skin.fontColor, skin.onColor]])
+			.states_([['ed', skin.fontColor, skin.offColor], ['ed', skin.fontColor, skin.onColor]])
 	}
 
 	makeRipBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([['^', skin.fontColor, Color.clear]])
+			.states_([['^', skin.fontColor, skin.offColor]])
 			.action_({ this.class.new(object, numItems) })
 	}
 
 	makePollBut { |width, height|
 		Button(zone, width@height).font_(font)
-			.states_([[\poll, skin.fontColor, Color.clear]])
+			.states_([[\poll, skin.fontColor, skin.offColor]])
 			.action_({  object !? {
 				object.bus.getn(action: { |arr| (object.asCompileString + "poll:" + arr).postln })
 			} })
@@ -321,7 +360,7 @@ NdefGui : JITGui {
 			\name, object.key,
 			\type, object.typeStr,
 			\isPaused, object.paused,
-			\canSend, object.sources.notNil,
+			\canSend, object.sources.size > 0,
 			\fadeTime, object.fadeTime,
 			\isPlaying, object.isPlaying
 		]);
@@ -347,7 +386,7 @@ NdefGui : JITGui {
 
 		if (typeView.notNil) {
 			if (newState[\type] != prevState[\type]) {
-				typeView.string_(newState[\type])
+				// typeView.string_(newState[\type].asString)
 			}
 		};
 
@@ -365,7 +404,7 @@ NdefGui : JITGui {
 
 		if (sendBut.notNil) {
 			if (newState[\canSend] != prevState[\canSend]) {
-				sendBut.value_(newState[\canSend].binaryValue)
+				sendBut.value_(newState[\canSend].binaryValue);
 			}
 		};
 		if (wakeBut.notNil) {

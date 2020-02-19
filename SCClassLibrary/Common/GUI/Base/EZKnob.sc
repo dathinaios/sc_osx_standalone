@@ -2,8 +2,7 @@ EZKnob : EZGui {
 
 	classvar <>compactRatio=0.87;
 
-	var <knobView, <numberView, <unitView, <>controlSpec,
-		  popUp=false, knobSize,unitWidth, gap;
+	var <knobView, <numberView, <unitView, <>controlSpec, knobSize, unitWidth;
 	var <>round = 0.001;
 
 	*new { arg parent, bounds, label, controlSpec, action, initVal,
@@ -43,16 +42,16 @@ EZKnob : EZGui {
 
 		// instert the views
 		label.notNil.if{ //only add a label if desired
-			labelView = GUI.staticText.new(view, labelBounds);
+			labelView = StaticText.new(view, labelBounds);
 			labelView.string = label;
 		};
 
 		(unitWidth>0).if{ //only add a unitLabel if desired
-			unitView = GUI.staticText.new(view, unitBounds);
+			unitView = StaticText.new(view, unitBounds);
 		};
 
-		knobView = GUI.knob.new(view, knobBounds);
-		numberView = GUI.numberBox.new(view, numBounds);
+		knobView = Knob.new(view, knobBounds);
+		numberView = NumberBox.new(view, numBounds);
 
 		// set view parameters and actions
 		controlSpec = argControlSpec.asSpec;
@@ -75,7 +74,7 @@ EZKnob : EZGui {
 		if((controlSpec.minval + controlSpec.maxval)==0){knobView.centered=true};
 
 		knobView.action = {
-			this.valueAction_(controlSpec.map(knobView.value));
+			this.valueActionIfChanged_(controlSpec.map(knobView.value));
 		};
 
 		if (controlSpec.step != 0) {
@@ -83,14 +82,14 @@ EZKnob : EZGui {
 		};
 
 		knobView.receiveDragHandler = { arg slider;
-			slider.valueAction = controlSpec.unmap(GUI.view.currentDrag);
+			slider.valueAction = controlSpec.unmap(View.currentDrag);
 		};
 
 		knobView.beginDragAction = { arg slider;
 			controlSpec.map(slider.value)
 		};
 
-		numberView.action = { this.valueAction_(numberView.value) };
+		numberView.action = { this.valueActionIfChanged_(numberView.value) };
 
 		if (initAction) {
 			this.valueAction_(initVal);
@@ -218,7 +217,7 @@ EZKnob : EZGui {
 		numHeight=labelSize.y;
 
 		switch (layout,
-			 \line2, {
+			\line2, {
 				knobSize.isNil.if{knobSize=( ((rect.height/compactRatio)-margin.x)@(rect.height))};
 				knobSize=(knobSize.x-margin.x)@(knobSize.y.min(rect.height));
 				hasUnit.not.if{ gap2 = 0@0; unitWidth = 0};
@@ -240,18 +239,18 @@ EZKnob : EZGui {
 				};
 				knobBounds=knobSize.asRect.moveTo(rect.width-knobSize.x,0);
 			},
-			 \horz, {
+			\horz, {
 				knobSize.isNil.if{knobSize=( ((rect.height/compactRatio)-margin.x)@(rect.height))};
 				knobSize=(knobSize.x-margin.x)@(knobSize.y.min(rect.height));
 				knobBounds=knobSize.asRect.moveTo(rect.width-knobSize.x,0);
 				hasUnit.not.if{ gap2 = 0@0; unitWidth = 0};
 				hasLabel.not.if{ gap1 = 0@0; labelSize.x = 0};
-			 	labelBounds = (labelSize.x@rect.height).asRect;
-			 	unitBounds = (unitWidth@rect.height).asRect
-			 		.moveTo(rect.width-knobBounds.width-gap2.x-unitWidth,0);
-			 	numBounds = Rect.newSides(labelSize.x+gap1.x,0,unitBounds.left-gap2.x,rect.height);
-			 },
-			 \vert , {
+				labelBounds = (labelSize.x@rect.height).asRect;
+				unitBounds = (unitWidth@rect.height).asRect
+					.moveTo(rect.width-knobBounds.width-gap2.x-unitWidth,0);
+				numBounds = Rect.newSides(labelSize.x+gap1.x,0,unitBounds.left-gap2.x,rect.height);
+			},
+			\vert , {
 				hasUnit.not.if{ gap3 = 0@0; unitWidth = 0};
 				hasLabel.not.if{ gap1 = 0@0; labelSize.y = 0};
 
@@ -262,15 +261,15 @@ EZKnob : EZGui {
 				knobSize=((knobSize.x).min(rect.width))
 					@(knobSize.y.min(rect.height-labelSize.y-numHeight-gap1.y-gap2.y));
 
-			 	labelBounds = (rect.width@labelSize.y).asRect;
+				labelBounds = (rect.width@labelSize.y).asRect;
 				knobBounds=knobSize.asRect.moveTo(0,labelSize.y+gap1.y);
 
-			 	numBounds = Rect(0,rect.height-numHeight,rect.width-unitWidth-gap3.x, numHeight);
+				numBounds = Rect(0,rect.height-numHeight,rect.width-unitWidth-gap3.x, numHeight);
 
-			 	unitBounds = Rect(rect.width-unitWidth,rect.height-numHeight,unitWidth,numHeight);
+				unitBounds = Rect(rect.width-unitWidth,rect.height-numHeight,unitWidth,numHeight);
 
-			 },
-			 \vert2 , {
+			},
+			\vert2 , {
 				hasUnit.not.if{ gap3 = 0@0; unitWidth = 0};
 				hasLabel.not.if{ gap1 = 0@0; labelSize.y = 0};
 
@@ -282,18 +281,17 @@ EZKnob : EZGui {
 					@(knobSize.y.min(rect.height-labelSize.y-numHeight-gap1.y-gap2.y));
 
 
-			 	labelBounds = (rect.width@labelSize.y).asRect;
+				labelBounds = (rect.width@labelSize.y).asRect;
 				knobBounds=knobSize.asRect.moveTo(0,labelSize.y+gap1.y);
 				knobBounds=knobBounds.moveBy((rect.width-knobBounds.width)/2,0);
-			 	numBounds = Rect(0,rect.height-numHeight,rect.width-unitWidth-gap3.x, numHeight);
+				numBounds = Rect(0,rect.height-numHeight,rect.width-unitWidth-gap3.x, numHeight);
 
-			 	unitBounds = Rect(rect.width-unitWidth,rect.height-numHeight,unitWidth,numHeight);
+				unitBounds = Rect(rect.width-unitWidth,rect.height-numHeight,unitWidth,numHeight);
 
-			 }
+			}
 		);
 		((knobBounds.height<0)||(knobBounds.width<0)).if{knobBounds=knobBounds.height_(0).width_(0)};
 
 		^[labelBounds, numBounds, knobBounds, unitBounds].collect{arg v; v.moveBy(margin.x,margin.y)}
 	}
-
 }

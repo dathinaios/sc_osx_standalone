@@ -1,23 +1,39 @@
 Scale {
-
 	var <degrees, <pitchesPerOctave, <tuning, <>name;
+	classvar <all;
 
-	*new { | degrees, pitchesPerOctave, tuning, name = "Unknown Scale" |
-		^super.new.init(degrees ? \ionian, pitchesPerOctave, tuning, name);
+	*new { | degrees = \ionian, pitchesPerOctave, tuning, name = "Unknown Scale" |
+		if(degrees.isKindOf(Symbol)) { Error("Please use Scale.at(name) instead.").throw };
+		^super.new.init(degrees, pitchesPerOctave, tuning, name);
 	}
 
 	init { | inDegrees, inPitchesPerOctave, inTuning, inName |
-		degrees = Int32Array.newFrom(inDegrees.asArray.asInteger);
+		degrees = inDegrees;
 		pitchesPerOctave = inPitchesPerOctave ? this.guessPPO(degrees);
 		name = inName;
 		^this.tuning_(inTuning ? Tuning.default(pitchesPerOctave));
 	}
 
+	*at { |key|
+		^all.at(key)
+	}
+
+	*doesNotUnderstand { |selector, args|
+		var scale = this.newFromKey(selector, args).deepCopy;
+		^scale ?? { super.doesNotUnderstand(selector, args) };
+	}
+
 	*newFromKey { |key, tuning|
-		var scale = ScaleInfo.at(key);
+		var scale = this.at(key).deepCopy;
 		scale ?? { ("Unknown scale " ++ key.asString).warn; ^nil };
 		tuning !? { scale.tuning_(tuning.asTuning) };
 		^scale
+	}
+
+	*chromatic {|tuning = \et12|
+		var tuningObject = tuning.asTuning;
+		var steps = tuningObject.size;
+		^Scale.new(Array.series(steps), steps, tuningObject, name: "Chromatic % (%)".format(steps, tuningObject.name))
 	}
 
 	checkTuningForMismatch { |aTuning|
@@ -97,25 +113,23 @@ Scale {
 	}
 
 	*choose { |size = 7, pitchesPerOctave = 12|
-		var scale = ScaleInfo.choose({
+		var scale = this.chooseFromSelected {
 			|x| (x.size == size) && (x.pitchesPerOctave == pitchesPerOctave)
-		});
-		scale.isNil.if({
-			("No known scales with size " ++ size.asString ++
-				" and pitchesPerOctave " ++ pitchesPerOctave.asString).warn;
-			^nil
-		});
+		};
+		if(scale.isNil) {
+			"No known scales with size % and pitchesPerOctave %".format(size, pitchesPerOctave).warn
+		};
 		^scale
 	}
 
-	*doesNotUnderstand { |selector, args|
-		var scale = this.newFromKey(selector, args);
-		^scale ?? { super.doesNotUnderstand(selector, args) };
+	*chooseFromSelected { |selectFunc|
+		selectFunc = selectFunc ? { true };
+		^(all.copy.putAll(all.parent)).select(selectFunc)
+		.choose.deepCopy;
 	}
 
-
-	*directory {
-		^ScaleInfo.directory
+	*names {
+		^(all.keys.asArray ++ all.parent.keys).sort
 	}
 
 	octaveRatio {
@@ -142,8 +156,11 @@ Scale {
 
 	storedKey {
 		// can be optimised later
-		var stored = ScaleInfo.scales.detect(_ == this);
-		^stored !? { ScaleInfo.scales.findKeyForValue(stored) }
+		^all.findKeyForValue(this)
+	}
+
+	*directory {
+		^this.names.collect({ |k| "\\ %: %".format(k, all.at(k).name) }).join("\n")
 	}
 
 	storeArgs { ^[degrees, pitchesPerOctave, tuning, name] }
@@ -152,20 +169,28 @@ Scale {
 	printOn { |stream|
 		this.storeOn(stream)
 	}
-
-
 }
 
 Tuning {
 
 	var <tuning, <octaveRatio, <>name;
+	classvar <all;
 
 	*new { | tuning, octaveRatio = 2.0, name = "Unknown Tuning" |
-		^super.newCopyArgs(DoubleArray.newFrom(tuning), octaveRatio, name);
+		^super.newCopyArgs(tuning, octaveRatio, name);
+	}
+
+	*at { |key|
+		^all.at(key)
+	}
+
+	*doesNotUnderstand { |selector, args|
+		var tuning = this.newFromKey(selector, args).deepCopy;
+		^tuning ?? { super.doesNotUnderstand(selector, args) }
 	}
 
 	*newFromKey { | key |
-		^TuningInfo.at(key)
+		^all.at(key).deepCopy
 	}
 
 	*default { | pitchesPerOctave |
@@ -185,7 +210,13 @@ Tuning {
 	}
 
 	*choose { |size = 12|
-		^TuningInfo.choose({ |x| x.size == size })
+		^this.chooseFromSelected { |x| x.size == size }
+	}
+
+	*chooseFromSelected { |selectFunc|
+		selectFunc = selectFunc ? { true };
+		^(all.copy.putAll(all.parent)).select(selectFunc)
+		.choose.deepCopy;
 	}
 
 	ratios {
@@ -209,11 +240,11 @@ Tuning {
 	}
 
 	at { |index|
-		^tuning.at(index)
+		^if(index.isInteger) { tuning.at(index) } { tuning.blendAt(index) }
 	}
 
 	wrapAt { |index|
-		^tuning.wrapAt(index)
+		^if(index.isInteger) { tuning.wrapAt(index) } { tuning.blendAt(index, \wrapAt) }
 	}
 
 	== { |argTuning|
@@ -222,15 +253,6 @@ Tuning {
 
 	hash {
 		^this.instVarHash([\tuning, \octaveRatio])
-	}
-
-	*doesNotUnderstand { |selector, args|
-		var tuning = this.newFromKey(selector, args);
-		^tuning ?? { super.doesNotUnderstand(selector, args) }
-	}
-
-	*directory {
-		^TuningInfo.directory
 	}
 
 	stepsPerOctave {
@@ -253,21 +275,27 @@ Tuning {
 
 	storedKey {
 		// can be optimised later
-		var stored = TuningInfo.tunings.detect(_ == this);
-		^stored !? { TuningInfo.tunings.findKeyForValue(stored) }
+		^all.findKeyForValue(this)
 	}
 
 	storeArgs {
 		^[tuning, octaveRatio, name]
 	}
 
+	*names {
+		^(all.keys.asArray ++ all.parent.keys).sort
+	}
+
+	*directory {
+		^this.names.collect({ |k| "\\ %: %".format(k, all.at(k).name) }).join("\n")
+	}
 }
 
 ScaleAD : Scale {
 	var <>descScale;
 	*new { | degrees, pitchesPerOctave, descDegrees, tuning, name = "Unknown Scale" |
-		^super.new.init(degrees ? \ionian, pitchesPerOctave, tuning, name)
-			.descScale_(Scale(descDegrees ? \ionian, pitchesPerOctave, tuning, name ++ "desc"))
+		^super.new(degrees, pitchesPerOctave, tuning, name)
+			.descScale_(Scale(descDegrees, pitchesPerOctave, tuning, name ++ "desc"))
 		;
 	}
 	asStream { ^ScaleStream(this, 0) }
@@ -307,15 +335,14 @@ ScaleStream {
 	}
 }
 
-ScaleInfo {
 
-	classvar <scales, dirDoc;
++ Scale {
 
 	*initClass {
 
-		Class.initClassTree(TuningInfo);
+		Class.initClassTree(Tuning);
 
-		scales = IdentityDictionary[
+		all = IdentityDictionary[
 
 			// TWELVE TONES PER OCTAVE
 			// 5 note scales
@@ -323,8 +350,8 @@ ScaleInfo {
 			\majorPentatonic -> Scale.new(#[0,2,4,7,9], 12, name: "Major Pentatonic"),
 			// another mode of major pentatonic
 			\ritusen -> Scale.new(#[0,2,5,7,9], 12, name: "Ritusen"),
- 			// another mode of major pentatonic
- 			\egyptian -> Scale.new(#[0,2,5,7,10], 12, name: "Egyptian"),
+			// another mode of major pentatonic
+			\egyptian -> Scale.new(#[0,2,5,7,10], 12, name: "Egyptian"),
 
 			\kumoi -> Scale.new(#[0,2,3,7,9], 12, name: "Kumai"),
 			\hirajoshi -> Scale.new(#[0,2,3,7,8], 12, name: "Hirajoshi"),
@@ -413,7 +440,8 @@ ScaleInfo {
 			\ahirbhairav -> Scale.new(#[0,1,4,5,7,9,10], 12, name: "Ahirbhairav"),
 
 			\superLocrian -> Scale.new(#[0,1,3,4,6,8,10], 12, name: "Super Locrian"),
-			\romanianMinor -> Scale.new(#[0,2,3,6,7,9,10], 12, name: "Romanian Minor"),			\hungarianMinor -> Scale.new(#[0,2,3,6,7,8,11], 12, name: "Hungarian Minor"),
+			\romanianMinor -> Scale.new(#[0,2,3,6,7,9,10], 12, name: "Romanian Minor"),
+			\hungarianMinor -> Scale.new(#[0,2,3,6,7,8,11], 12, name: "Hungarian Minor"),
 			\neapolitanMinor -> Scale.new(#[0,1,3,5,7,8,11], 12, name: "Neapolitan Minor"),
 			\enigmatic -> Scale.new(#[0,1,4,6,8,10,11], 12, name: "Enigmatic"),
 			\spanish -> Scale.new(#[0,1,4,5,7,8,10], 12, name: "Spanish"),
@@ -475,7 +503,7 @@ ScaleInfo {
 			\zanjaran -> Scale.new(#[0,2,8,10,14,18,20], 24, name: "Zanjaran"),
 
 			// maqam hijazKar
-			\zanjaran -> Scale.new(#[0,2,8,10,14,16,22], 24, name: "Zanjaran"),
+			\hijazKar -> Scale.new(#[0,2,8,10,14,16,22], 24, name: "hijazKar"),
 
 			// maqam saba
 			\saba -> Scale.new(#[0,3,6,8,12,16,20], 24, name: "Saba"),
@@ -497,46 +525,15 @@ ScaleInfo {
 			\nahawand -> ScaleAD(#[0,4,6,10,14,16,22], 24, #[0,4,6,10,14,16,20], name: "Nahawand"),
 		];
 
-	}
-
-	*at { |key|
-		var res = scales[key];
-		^res !? { res.deepCopy };
-	}
-
-	*choose {
-		|selectFunc|
-		^scales.values.select(selectFunc ? { true }).choose.deepCopy;
-	}
-
-	*names {
-		^scales.keys.asArray.sort
-	}
-	*directory {
-		var dirString = scales.keys.asArray.sort.collect({ |k|
-			"\\" ++ k ++ ": " ++ scales.at(k).name
-		}).join("\n");
-
-		if(Document.implementationClass.notNil) {
-			dirDoc = dirDoc ?? {
-				Document.new("Tuning Directory", dirString)
-				.onClose_({ dirDoc.free; dirDoc = nil });
-			};
-			dirDoc.front;
-			dirDoc.string = dirString;
-		} {
-			dirString.postln;
-		}
+		all = all.freezeAsParent;
 	}
 }
 
-TuningInfo {
-
-	classvar <tunings, dirDoc;
++ Tuning {
 
 	*initClass {
 
-		tunings = IdentityDictionary[
+		all = IdentityDictionary[
 
 			//TWELVE-TONE TUNINGS
 			\et12 -> Tuning.new((0..11), 2, "ET12"),
@@ -570,6 +567,10 @@ TuningInfo {
 				27/16, 7/4, 15/8].ratiomidi, 2, "Wendy Carlos Harmonic"),
 			\wcSJ -> Tuning.new([1, 17/16, 9/8, 6/5, 5/4, 4/3, 11/8, 3/2, 13/8, 5/3,
 				7/4, 15/8].ratiomidi, 2, "Wendy Carlos Super Just"),
+			\lu ->Tuning( [
+				1, 2187/2048, 9/8, 19683/16384, 81/64, 177147/131072, 729/612, 3/2, 6561/4096,
+				27/16, 59049/32768, 243/128
+			].ratiomidi, 2, "Chinese Shi-er-lu scale"),
 
 			//MORE THAN TWELVE-TONE ET
 			\et19 -> Tuning.new((0 .. 18) * 12/19, 2, "ET19"),
@@ -599,6 +600,13 @@ TuningInfo {
 			\sruti -> Tuning.new([1, 256/243, 16/15, 10/9, 9/8, 32/27, 6/5, 5/4, 81/64,
 				4/3, 27/20, 45/32, 729/512, 3/2, 128/81, 8/5, 5/3, 27/16, 16/9, 9/5,
 				15/8, 243/128].ratiomidi, 2, "Sruti"),
+			\perret -> Tuning([1, 21/20, 35/32, 9/8, 7/6, 6/5, 5/4, 21/16, 4/3, 7/5, 35/24,
+				3/2, 63/40, 8/5, 5/3, 7/4, 9/5, 15/8, 63/32].ratiomidi, 2, "Wilfrid Perret"),
+			\michael_harrison -> Tuning( [1, 28/27, 135/128, 16/15, 243/224, 9/8, 8/7, 7/6,
+				32/27, 6/5, 135/112, 5/4, 81/64, 9/7, 21/16, 4/3, 112/81, 45/32, 64/45, 81/56,
+				3/2, 32/21, 14/9, 128/81, 8/5, 224/135, 5/3, 27/16, 12/7, 7/4, 16/9, 15/8,
+				243/128, 27/14].ratiomidi, 2, "Michael Harrison 24 tone 7-limit"),
+
 
 			//HARMONIC SERIES -- length arbitary
 			\harmonic -> Tuning.new((1 .. 24).ratiomidi, 2, "Harmonic Series 24"),
@@ -613,37 +621,7 @@ TuningInfo {
 				"Wendy Carlos Gamma")
 		];
 
-
+		all = all.freezeAsParent;
 	}
 
-	*choose { |selectFunc|
-		^tunings.values.select(selectFunc ? { true }).choose;
-	}
-
-	*names {
-		^tunings.keys.asArray.sort
-	}
-
-	*at { |key|
-		var res = tunings[key];
-		^res !? { res.deepCopy };
-	}
-
-	*directory {
-		var dirString = tunings.keys.asArray.sort.collect({ |k|
-			"\\" ++ k ++ ": " ++ tunings.at(k).name
-		}).join("\n");
-
-		if(Document.implementationClass.notNil) {
-			dirDoc = dirDoc ?? {
-				Document.new("Tuning Directory", dirString)
-				.onClose_({ dirDoc.free; dirDoc = nil });
-			};
-			dirDoc.front;
-			dirDoc.string = dirString;
-		} {
-			dirString.postln;
-		}
-
-	}
 }

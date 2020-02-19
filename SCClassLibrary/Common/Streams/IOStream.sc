@@ -59,6 +59,9 @@ CollStream : IOStream {
 	pos_ { arg toPos;
 		pos = toPos.clip(0, collection.size);
 	}
+	rewind { |n = 1|
+		pos = max(0, pos - n);
+	}
 	peek {
 		^collection.at(pos)
 	}
@@ -110,9 +113,9 @@ CollStream : IOStream {
 //	}
 
 	getChar { ^this.next; }
-	getInt8 { ^this.next & 255; }
-	getInt16 { ^this.getInt8 << 8 | this.getInt8; }
-	getInt32 { ^this.getInt16 << 16 | this.getInt16; }
+	getInt8 { ^this.next.bitAnd(255); }
+	getInt16 { ^this.getInt8.leftShift(8).bitOr(this.getInt8); }
+	getInt32 { ^this.getInt16.leftShift(16).bitOr(this.getInt16); }
 	getFloat { ^Float.from32Bits(this.getInt32); }
 	getDouble { ^Float.from64Bits(this.getInt32, this.getInt32); }
 
@@ -128,26 +131,26 @@ CollStream : IOStream {
 //
 	// collection should be an Int8Array
 	putChar { arg aChar; this.put(aChar.ascii); }
-	putInt8 { arg anInteger; this.put(anInteger & 255); }
+	putInt8 { arg anInteger; this.put(anInteger.bitAnd(255)); }
 	putInt16 { arg anInteger;
-		this.putInt8(anInteger>>8);
+		this.putInt8(anInteger.rightShift(8));
 		this.putInt8(anInteger);
 	}
 	putInt16LE { arg anInteger;
 		this.putInt8(anInteger);
-		this.putInt8(anInteger>>8);
+		this.putInt8(anInteger.rightShift(8));
 	}
 	putInt32 { arg anInteger;
-		this.putInt8(anInteger>>24);
-		this.putInt8(anInteger>>16);
-		this.putInt8(anInteger>>8);
+		this.putInt8(anInteger.rightShift(24));
+		this.putInt8(anInteger.rightShift(16));
+		this.putInt8(anInteger.rightShift(8));
 		this.putInt8(anInteger);
 	}
 	putInt32LE { arg anInteger;
 		this.putInt8(anInteger);
-		this.putInt8(anInteger>>8);
-		this.putInt8(anInteger>>16);
-		this.putInt8(anInteger>>24);
+		this.putInt8(anInteger.rightShift(8));
+		this.putInt8(anInteger.rightShift(16));
+		this.putInt8(anInteger.rightShift(24));
 	}
 	putFloat { arg aFloat;
 		aFloat = aFloat.asFloat;
@@ -170,7 +173,11 @@ CollStream : IOStream {
 	putString { arg aString;
 		aString.do({ arg char; this.putChar(char); });
 	}
+
 	putPascalString { arg aString;
+		if(aString.size >= 256) {
+			Error("putPascalString: input string must be shorter than 256 chars: \"%\"".format(aString)).throw;
+		};
 		this.putInt8(aString.size);
 		this.putString(aString);
 	}

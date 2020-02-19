@@ -16,7 +16,7 @@ UGen : AbstractFunction {
 	*newFromDesc { arg rate, numOutputs, inputs, specialIndex;
 		^super.new.rate_(rate).inputs_(inputs).specialIndex_(specialIndex)
 	}
- 	*multiNew { arg ... args;
+	*multiNew { arg ... args;
 		^this.multiNewList(args);
 	}
 
@@ -38,21 +38,21 @@ UGen : AbstractFunction {
 		^results
 	}
 
- 	init { arg ... theInputs;
- 		// store the inputs as an array
- 		inputs = theInputs;
- 	}
- 	copy {
- 		// you can't really copy a UGen without disturbing the Synth.
- 		// Usually you want the same object. This makes .dup work
- 		^this
- 	}
+	init { arg ... theInputs;
+		// store the inputs as an array
+		inputs = theInputs;
+	}
+	copy {
+		// you can't really copy a UGen without disturbing the Synth.
+		// Usually you want the same object. This makes .dup work
+		^this
+	}
 
- 	madd { arg mul = 1.0, add = 0.0;
- 		^MulAdd(this, mul, add);
- 	}
- 	range { arg lo = 0.0, hi = 1.0;
- 		var mul, add;
+	madd { arg mul = 1.0, add = 0.0;
+		^MulAdd(this, mul, add);
+	}
+	range { arg lo = 0.0, hi = 1.0;
+		var mul, add;
 		if (this.signalRange == \bipolar, {
 			mul = (hi - lo) * 0.5;
 			add = mul + lo;
@@ -60,46 +60,59 @@ UGen : AbstractFunction {
 			mul = (hi - lo) ;
 			add = lo;
 		});
- 		^MulAdd(this, mul, add);
- 	}
- 	exprange { arg lo = 0.01, hi = 1.0;
+		^MulAdd(this, mul, add);
+	}
+	exprange { arg lo = 0.01, hi = 1.0;
 		^if (this.signalRange == \bipolar) {
 			this.linexp(-1, 1, lo, hi, nil)
 		} {
 			this.linexp(0, 1, lo, hi, nil)
 		};
- 	}
+	}
 
- 	unipolar { arg mul = 1;
- 		^this.range(0, mul)
- 	}
+	curverange { arg lo = 0.00, hi = 1.0, curve = -4;
+		^if (this.signalRange == \bipolar) {
+			this.lincurve(-1, 1, lo, hi, curve, nil)
+		} {
+			this.lincurve(0, 1, lo, hi, curve, nil)
+		};
+	}
 
- 	bipolar { arg mul = 1;
- 		^this.range(mul.neg, mul)
-  	}
+	unipolar { arg mul = 1;
+		^this.range(0, mul)
+	}
 
- 	clip { arg lo = 0.0, hi = 1.0;
+	bipolar { arg mul = 1;
+		^this.range(mul.neg, mul)
+	}
+
+	clip { arg lo = 0.0, hi = 1.0;
 		^if(rate == \demand){
 			max(lo, min(hi, this))
 		}{
 			Clip.perform(Clip.methodSelectorForRate(rate), this, lo, hi)
 		}
- 	}
+	}
 
- 	fold { arg lo = 0.0, hi = 0.0;
+	fold { arg lo = 0.0, hi = 0.0;
 		^if(rate == \demand) {
- 			this.notYetImplemented(thisMethod)
- 		} {
+			this.notYetImplemented(thisMethod)
+		} {
 			Fold.perform(Fold.methodSelectorForRate(rate), this, lo, hi)
- 		}
- 	}
- 	wrap { arg lo = 0.0, hi = 1.0;
+		}
+	}
+	wrap { arg lo = 0.0, hi = 1.0;
 		^if(rate == \demand) {
 			this.notYetImplemented(thisMethod)
 		} {
 			Wrap.perform(Wrap.methodSelectorForRate(rate), this, lo, hi)
 		}
- 	}
+	}
+
+	degrad { ^this * (pi/180) }
+
+	raddeg { ^this * (180/pi) }
+
 	blend { arg that, blendFrac = 0.5;
 		var pan;
 		^if (rate == \demand || that.rate == \demand) {
@@ -118,7 +131,7 @@ UGen : AbstractFunction {
 		}
 	}
 
- 	minNyquist { ^min(this, SampleRate.ir * 0.5) }
+	minNyquist { ^min(this, SampleRate.ir * 0.5) }
 
 	lag { arg t1=0.1, t2;
 		^if(t2.isNil) {
@@ -174,6 +187,19 @@ UGen : AbstractFunction {
 		);
 		^this
 	}
+
+	snap { arg resolution = 1.0, margin = 0.05, strength = 1.0;
+		var round = round(this, resolution);
+		var diff = round - this;
+		^Select.multiNew(this.rate, abs(diff) < margin, this, this + (strength * diff));
+	}
+
+	softRound { arg resolution = 1.0, margin = 0.05, strength = 1.0;
+		var round = round(this, resolution);
+		var diff = round - this;
+		^Select.multiNew(this.rate, abs(diff) > margin, this, this + (strength * diff));
+	}
+
 	linlin { arg inMin, inMax, outMin, outMax, clip = \minmax;
 		if (this.rate == \audio) {
 			^LinLin.ar(this.prune(inMin, inMax, clip), inMin, inMax, outMin, outMax)
@@ -196,8 +222,8 @@ UGen : AbstractFunction {
 	}
 
 	lincurve { arg inMin = 0, inMax = 1, outMin = 0, outMax = 1, curve = -4, clip = \minmax;
-		var grow, a, b, scaled;
-		if (curve.isNumber and: { abs(curve) < 0.25 }) {
+		var grow, a, b, scaled, curvedResult;
+		if (curve.isNumber and: { abs(curve) < 0.125 }) {
 			^this.linlin(inMin, inMax, outMin, outMax, clip)
 		};
 		grow = exp(curve);
@@ -205,19 +231,54 @@ UGen : AbstractFunction {
 		b = outMin + a;
 		scaled = (this.prune(inMin, inMax, clip) - inMin) / (inMax - inMin);
 
-		^b - (a * pow(grow, scaled));
+		curvedResult = b - (a * pow(grow, scaled));
+
+		if (curve.rate == \scalar) {
+			^curvedResult
+		} {
+			^Select.perform(this.methodSelectorForRate, abs(curve) >= 0.125, [
+				this.linlin(inMin, inMax, outMin, outMax, clip),
+				curvedResult
+			])
+		}
 	}
 
 	curvelin { arg inMin = 0, inMax = 1, outMin = 0, outMax = 1, curve = -4, clip = \minmax;
-		var grow, a, b, scaled;
-		if (curve.isNumber and: { abs(curve) < 0.25 }) {
+		var grow, a, b, scaled, linResult;
+		if (curve.isNumber and: { abs(curve) < 0.125 }) {
 			^this.linlin(inMin, inMax, outMin, outMax, clip)
 		};
 		grow = exp(curve);
 		a = inMax - inMin / (1.0 - grow);
 		b = inMin + a;
 
-		^(log( (b - this.prune(inMin, inMax, clip)) / a ) * (outMax - outMin) / curve + outMin)
+		linResult = log( (b - this.prune(inMin, inMax, clip)) / a ) * (outMax - outMin) / curve + outMin;
+
+		if (curve.rate == \scalar) {
+			^linResult
+		} {
+			^Select.perform(this.methodSelectorForRate, abs(curve) >= 0.125, [
+				this.linlin(inMin, inMax, outMin, outMax, clip),
+				linResult
+			])
+		}
+	}
+
+	bilin { arg inCenter, inMin, inMax, outCenter, outMin, outMax, clip=\minmax;
+		^Select.perform(this.methodSelectorForRate, this < inCenter,
+			[
+				this.linlin(inCenter, inMax, outCenter, outMax, clip),
+				this.linlin(inMin, inCenter, outMin, outCenter, clip)
+			]
+		)
+	}
+
+	moddif { |that = 0.0, mod = 1.0|
+		^ModDif.multiNew(this.rate, this, that, mod)
+	}
+
+	sanitize {
+		^Sanitize.perform(this.methodSelectorForRate, this);
 	}
 
 	signalRange { ^\bipolar }
@@ -260,16 +321,16 @@ UGen : AbstractFunction {
 					^("input " ++ i ++ " is not audio rate: " + inputs.at(i) + inputs.at(0).rate);
 				};
 			};
-		 };
+		};
 		^this.checkValidInputs
 	}
 
 	checkSameRateAsFirstInput {
- 		if (rate !== inputs.at(0).rate) {
- 			^("first input is not" + rate + "rate: " + inputs.at(0) + inputs.at(0).rate);
- 		};
- 		^this.checkValidInputs
- 	}
+		if (rate !== inputs.at(0).rate) {
+			^("first input is not" + rate + "rate: " + inputs.at(0) + inputs.at(0).rate);
+		};
+		^this.checkValidInputs
+	}
 
 	argNameForInputAt { arg i;
 		var method = this.class.class.findMethod(this.methodSelectorForRate);
@@ -289,9 +350,10 @@ UGen : AbstractFunction {
 
 	outputIndex { ^0 }
 	writesToBus { ^false }
+	isUGen { ^true }
 
 	poll { arg trig = 10, label, trigid = -1;
-          ^Poll(trig, this, label, trigid)
+		^Poll(trig, this, label, trigid)
 	}
 
 	dpoll { arg label, run = 1, trigid = -1;
@@ -299,7 +361,7 @@ UGen : AbstractFunction {
 	}
 
 	checkBadValues { arg id = 0, post = 2;
-			// add the UGen to the tree but keep "this" as the output
+		// add the UGen to the tree but keep "this" as the output
 		CheckBadValues.perform(this.methodSelectorForRate, this, id, post);
 	}
 
@@ -318,28 +380,28 @@ UGen : AbstractFunction {
 	}
 
 	*replaceZeroesWithSilence { arg array;
- 		// this replaces zeroes with audio rate silence.
- 		// sub collections are deep replaced
- 		var numZeroes, silentChannels, pos = 0;
+		// this replaces zeroes with audio rate silence.
+		// sub collections are deep replaced
+		var numZeroes, silentChannels, pos = 0;
 
- 		numZeroes = array.count({ arg item; item == 0.0 });
- 		if (numZeroes == 0, { ^array });
+		numZeroes = array.count({ arg item; item == 0.0 });
+		if (numZeroes == 0, { ^array });
 
- 		silentChannels = Silent.ar(numZeroes).asCollection;
- 		array.do({ arg item, i;
- 			var res;
- 			if (item == 0.0, {
- 				array.put(i, silentChannels.at(pos));
- 				pos = pos + 1;
- 			}, {
- 				if(item.isSequenceableCollection, {
- 					res = this.replaceZeroesWithSilence(item);
- 					array.put(i, res);
- 				});
- 			});
- 		});
- 		^array;
- 	}
+		silentChannels = Silent.ar(numZeroes).asCollection;
+		array.do({ arg item, i;
+			var res;
+			if (item == 0.0, {
+				array.put(i, silentChannels.at(pos));
+				pos = pos + 1;
+			}, {
+				if(item.isSequenceableCollection, {
+					res = this.replaceZeroesWithSilence(item);
+					array.put(i, res);
+				});
+			});
+		});
+		^array;
+	}
 
 
 	// PRIVATE
@@ -406,19 +468,22 @@ UGen : AbstractFunction {
 		^this.class.name.asString;
 	}
 	writeDef { arg file;
-		file.putPascalString(this.name);
-		file.putInt8(this.rateNumber);
-		file.putInt32(this.numInputs);
-		file.putInt32(this.numOutputs);
-		file.putInt16(this.specialIndex);
-		// write wire spec indices.
-		inputs.do({ arg input;
-			input.writeInputSpec(file, synthDef);
-		});
-		this.writeOutputSpecs(file);
+		try {
+			file.putPascalString(this.name);
+			file.putInt8(this.rateNumber);
+			file.putInt32(this.numInputs);
+			file.putInt32(this.numOutputs);
+			file.putInt16(this.specialIndex);
+			// write wire spec indices.
+			inputs.do({ arg input;
+				input.writeInputSpec(file, synthDef);
+			});
+			this.writeOutputSpecs(file);
+		} {
+			arg e;
+			Error("UGen: could not write def: %".format(e.what())).throw;
+		}
 	}
-
-///////////////////////////////////////////////////////////////
 
 	initTopoSort {
 		inputs.do({ arg input;
@@ -473,8 +538,9 @@ UGen : AbstractFunction {
 	}
 }
 
-// ugen, which has no side effect and can therefore be considered for a dead code elimination
+// ugen which has no side effect and can therefore be considered for a dead code elimination
 // read access to buffers/busses are allowed
+
 PureUGen : UGen {
 	optimizeGraph {
 		super.performDeadCodeElimination
@@ -490,6 +556,9 @@ MultiOutUGen : UGen {
 	}
 
 	initOutputs { arg numChannels, rate;
+		if(numChannels.isNil or: { numChannels < 1 }, {
+			Error("%: wrong number of channels (%)".format(this, numChannels)).throw
+		});
 		channels = Array.fill(numChannels, { arg i;
 			OutputProxy(rate, this, i);
 		});
@@ -508,6 +577,12 @@ MultiOutUGen : UGen {
 		channels.do({ arg output; output.synthIndex_(index); });
 	}
 
+}
+
+PureMultiOutUGen : MultiOutUGen {
+	optimizeGraph {
+		super.performDeadCodeElimination
+	}
 }
 
 OutputProxy : UGen {

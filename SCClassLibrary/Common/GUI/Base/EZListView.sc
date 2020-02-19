@@ -17,22 +17,22 @@ EZListView : EZLists{
 		// insert the views
 		label.notNil.if{ //only add a label if desired
 			if (layout==\vert){
-				labelView = GUI.staticText.new(view, labelBounds).resize_(2);
+				labelView = StaticText.new(view, labelBounds).resize_(2);
 				labelView.align = \left;
 				}{
-				labelView = GUI.staticText.new(view, labelBounds).resize_(4);
+				labelView = StaticText.new(view, labelBounds).resize_(4);
 				labelView.align = \right;
 				};
 			labelView.string = label;
 		};
 
-		widget = GUI.listView.new(view, listBounds).resize_(5);
+		widget = ListView.new(view, listBounds).resize_(5);
 	}
 
 	listView{^widget}
 
 	setColors{arg stringBackground, stringColor, listBackground,  listStringColor,
-	 selectedStringColor,hiliteColor, background ;
+		selectedStringColor,hiliteColor, background ;
 
 			stringBackground.notNil.if{
 				labelView.notNil.if{labelView.background_(stringBackground)};};

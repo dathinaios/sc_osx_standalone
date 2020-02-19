@@ -11,9 +11,18 @@ ArrayedCollection : SequenceableCollection {
 	// ArrayedCollections are vectors which have a
 	// fixed maximum capacity.
 
-	indexedSize { _BasicSize }
-	size { _BasicSize }
-	maxSize { _BasicMaxSize }
+	indexedSize {
+		_BasicSize
+		^this.primitiveFailed
+	}
+	size {
+		_BasicSize
+		^this.primitiveFailed
+	}
+	maxSize {
+		_BasicMaxSize
+		^this.primitiveFailed
+	}
 
 	swap { arg i, j; var temp;
 		_BasicSwap;
@@ -173,6 +182,9 @@ ArrayedCollection : SequenceableCollection {
 		// ArrayedCollection.
 		_ArrayInsert
 		^this.primitiveFailed;
+	}
+	move { arg fromIndex, toIndex;
+		^this.insert(toIndex, this.removeAt(fromIndex))
 	}
 	addFirst { arg item; ^this.insert(0, item) }
 	addIfNotNil { arg item; if(item.notNil,{ ^this.add(item) }) }
@@ -402,9 +414,9 @@ ArrayedCollection : SequenceableCollection {
 		if(size.isNil) { size = this.size } { a = a.resamp1(size) };
 		a = a.integrate; // incrementally integrate
 		a = a.normalize(0, size-1); // normalize and scale by max index
-        	b = Array.fill(size, { arg i; a.indexInBetween(i) });  // flip array
-        	b = b / size // rescale to 0..1
-        	^b
+		b = Array.fill(size, { arg i; a.indexInBetween(i) });  // flip array
+		b = b / size // rescale to 0..1
+		^b
 	}
 
 	tableRand {

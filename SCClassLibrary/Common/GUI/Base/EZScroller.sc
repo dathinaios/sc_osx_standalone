@@ -7,7 +7,7 @@ EZScroller {
 			.init(w, bounds, initVal);
 	}
 	init { |w, bounds, initVal|
-		slider = GUI.slider.new(w, bounds);
+		slider = Slider.new(w, bounds);
 		slider.action = { |sl|
 			this.valueAction_(spec.map(sl.value));
 		};
@@ -29,10 +29,8 @@ EZScroller {
 		var maxLength = slBounds.width max: slBounds.height + 2;
 		var numTooMany = (numItems - maxItems).max(1);
 		var fractionToShow = (maxItems / numItems).min(1);
-		if (GUI.scheme.id == \cocoa) {
-			// swingOSC posts a 'not implemented yet' warning.
-			slider.thumbSize = fractionToShow * maxLength;
-		};
+
+		slider.thumbSize = fractionToShow * maxLength; // CHECK: does this work with qt?
 	//	slider.step_(1 / numTooMany.max(1));		// this does the action - it should not.
 		slider.setProperty(\step, 1 / numTooMany.max(1));
 		spec.minval_(numTooMany);	// minval to invert spec

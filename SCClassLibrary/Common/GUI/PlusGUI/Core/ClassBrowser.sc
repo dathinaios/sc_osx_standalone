@@ -32,12 +32,12 @@ ClassBrowser {
 
 		views = Environment(parent: updateProtos, know: true).make {
 
-			~window = gui.window.new("class browser", Rect(128, (GUI.window.screenBounds.height - 638).clip(0, 320), 720, 600))
+			~window = Window.new("class browser", Rect(128, (Window.screenBounds.height - 638).clip(0, 320), 720, 600))
 				.onClose_({ this.free });
 
 			~window.view.decorator = FlowLayout(~window.view.bounds);
 
-			~currentClassNameView = gui.textField.new(~window, Rect(0,0, 308, 32));
+			~currentClassNameView = TextField.new(~window, Rect(0,0, 308, 32));
 			~currentClassNameView.font = Font.sansSerif( 18 ).boldVariant;
 			~currentClassNameView.align = \center;
 
@@ -45,12 +45,12 @@ ClassBrowser {
 				this.makeState(views.currentClassNameView.string.asSymbol.asClass, \class);
 			};
 
-			~superClassNameView = gui.staticText.new(~window, Rect(0,0, 256, 32));
+			~superClassNameView = StaticText.new(~window, Rect(0,0, 256, 32));
 			~superClassNameView.font = hvBold12 = Font.sansSerif( 12 ).boldVariant;
 
 			~window.view.decorator.nextLine;
 
-			~bakButton = gui.button.new(~window, Rect(0,0, 24, 24));
+			~bakButton = Button.new(~window, Rect(0,0, 24, 24));
 			~bakButton.states = [["<"]];
 			~bakButton.action = {
 				if (historyPos > 0) {
@@ -59,7 +59,7 @@ ClassBrowser {
 				}
 			};
 
-			~fwdButton = gui.button.new(~window, Rect(0,0, 24, 24));
+			~fwdButton = Button.new(~window, Rect(0,0, 24, 24));
 			~fwdButton.states = [[">"]];
 			~fwdButton.action = {
 				if (historyPos < (history.size - 1)) {
@@ -69,7 +69,7 @@ ClassBrowser {
 			};
 
 
-			~superButton = gui.button.new(~window, Rect(0,0, 50, 24));
+			~superButton = Button.new(~window, Rect(0,0, 50, 24));
 			~superButton.states = [["super"]];
 
 			~superButton.action = {
@@ -78,7 +78,7 @@ ClassBrowser {
 				}
 			};
 
-			~metaButton = gui.button.new(~window, Rect(0,0, 50, 24));
+			~metaButton = Button.new(~window, Rect(0,0, 50, 24));
 			~metaButton.states = [["meta"]];
 
 			~metaButton.action = {
@@ -88,7 +88,7 @@ ClassBrowser {
 			};
 
 
-			~helpButton = gui.button.new(~window, Rect(0,0, 50, 24));
+			~helpButton = Button.new(~window, Rect(0,0, 50, 24));
 			~helpButton.states = [["help"]];
 
 			~helpButton.action = {
@@ -97,7 +97,7 @@ ClassBrowser {
 				}
 			};
 
-			~classSourceButton = gui.button.new(~window, Rect(0,0, 90, 24));
+			~classSourceButton = Button.new(~window, Rect(0,0, 90, 24));
 			~classSourceButton.states = [["class source"]];
 
 			~classSourceButton.action = {
@@ -106,7 +106,7 @@ ClassBrowser {
 				}
 			};
 
-			~methodSourceButton = gui.button.new(~window, Rect(0,0, 90, 24));
+			~methodSourceButton = Button.new(~window, Rect(0,0, 90, 24));
 			~methodSourceButton.states = [["method source"]];
 			~methodSourceButton.action = {
 				if(currentState.currentMethod.notNil) {
@@ -114,7 +114,7 @@ ClassBrowser {
 				};
 			};
 
-			~implementationButton = gui.button.new(~window, Rect(0,0, 100, 24));
+			~implementationButton = Button.new(~window, Rect(0,0, 100, 24));
 			~implementationButton.states = [["implementations"]];
 			~implementationButton.action = {
 				if(currentState.currentMethod.notNil) {
@@ -123,7 +123,7 @@ ClassBrowser {
 				};
 			};
 
-			~refsButton = gui.button.new(~window, Rect(0,0, 70, 24));
+			~refsButton = Button.new(~window, Rect(0,0, 70, 24));
 			~refsButton.states = [["references"]];
 			~refsButton.action = {
 				if(currentState.currentMethod.notNil) {
@@ -134,18 +134,18 @@ ClassBrowser {
 
 			~window.view.decorator.nextLine;
 
-			GUI.staticText.new(~window, Rect(0, 0, 65, 20)).string_("Search for");
-			~searchField = GUI.textField.new(~window, Rect(0, 0, 235, 20))
+			StaticText.new(~window, Rect(0, 0, 65, 20)).string_("Search for");
+			~searchField = TextField.new(~window, Rect(0, 0, 235, 20))
 				.action_({
 					this.searchClasses(views.searchField.string,
 						views.searchMenu.value, views.matchCaseButton.value);
 				});
-			GUI.staticText.new(~window, Rect(0, 0, 15, 20)).string_("in").align_(\center);
-			~searchMenu = GUI.popUpMenu.new(~window, Rect(0, 0, 200, 20));
-			~matchCaseButton = GUI.button.new(~window, Rect(0, 0, 100, 20))
+			StaticText.new(~window, Rect(0, 0, 15, 20)).string_("in").align_(\center);
+			~searchMenu = PopUpMenu.new(~window, Rect(0, 0, 200, 20));
+			~matchCaseButton = Button.new(~window, Rect(0, 0, 100, 20))
 				.states_([["Case insensitive"], ["Match case"]]);
 
-			~searchButton = GUI.button.new(~window, Rect(0, 0, 40, 20))
+			~searchButton = Button.new(~window, Rect(0, 0, 40, 20))
 				.states_([["GO"]])
 				.action_({
 					this.searchClasses(views.searchField.string,
@@ -154,34 +154,34 @@ ClassBrowser {
 
 			~window.view.decorator.nextLine;
 
-			~filenameView = gui.staticText.new(~window, Rect(0,0, 600, 18));
+			~filenameView = StaticText.new(~window, Rect(0,0, 600, 18));
 			~filenameView.font = Font.sansSerif( 10 );
 
 			~window.view.decorator.nextLine;
-			gui.staticText.new(~window, Rect(0,0, 180, 24))
+			StaticText.new(~window, Rect(0,0, 180, 24))
 				.font_(hvBold12).align_(\center).string_("class vars");
-			gui.staticText.new(~window, Rect(0,0, 180, 24))
+			StaticText.new(~window, Rect(0,0, 180, 24))
 				.font_(hvBold12).align_(\center).string_("instance vars");
 			~window.view.decorator.nextLine;
 
-			~classVarView = gui.listView.new(~window, Rect(0,0, 180, 130));
-			~instVarView = gui.listView.new(~window, Rect(0,0, 180, 130));
+			~classVarView = ListView.new(~window, Rect(0,0, 180, 130));
+			~instVarView = ListView.new(~window, Rect(0,0, 180, 130));
 			~classVarView.value = 0;
 			~instVarView.value = 0;
 
 			~window.view.decorator.nextLine;
 
-			~subclassTitle = gui.staticText.new(~window, Rect(0,0, 220, 24))
+			~subclassTitle = StaticText.new(~window, Rect(0,0, 220, 24))
 				.font_(hvBold12).align_(\center).string_("subclasses  (press return)");
-			~methodTitle = gui.staticText.new(~window, Rect(0,0, 240, 24))
+			~methodTitle = StaticText.new(~window, Rect(0,0, 240, 24))
 				.font_(hvBold12).align_(\center).string_("methods");
-			gui.staticText.new(~window, Rect(0,0, 200, 24))
+			StaticText.new(~window, Rect(0,0, 200, 24))
 				.font_(hvBold12).align_(\center).string_("arguments");
 			~window.view.decorator.nextLine;
 
-			~subclassView = gui.listView.new(~window, Rect(0,0, 220, 260));
-			~methodView = gui.listView.new(~window, Rect(0,0, 240, 260));
-			~argView = gui.listView.new(~window, Rect(0,0, 200, 260));
+			~subclassView = ListView.new(~window, Rect(0,0, 220, 260));
+			~methodView = ListView.new(~window, Rect(0,0, 240, 260));
+			~argView = ListView.new(~window, Rect(0,0, 200, 260));
 			~subclassView.resize = 4;
 			~methodView.resize = 4;
 			~argView.resize = 4;
@@ -263,7 +263,26 @@ ClassBrowser {
 	searchClasses { |string, rootNumber, matchCase, addHistory = true|
 		var	pool, rootdir, result,
 			searchType = searchMenuKeys[rootNumber] ? \classSearch,
-			isClassSearch;
+			isClassSearch,
+			warning = {
+				var w;
+				w = Window("Invalid search", Rect.aboutPoint(Window.screenBounds.center, 170, 60))
+				.layout_(VLayout(
+					StaticText().align_(\center)
+					.string_("This search requires a class to be selected"),
+					HLayout(
+						StaticText(),  // padding to push button to horiz. center
+						Button().states_([["OK"]])
+						.action_({ w.close })
+						.maxWidth_(80),
+						StaticText()
+					)
+				))
+				.endFrontAction_({
+					w.endFrontAction_(nil).close;
+				})
+				.front;
+			};
 		string = string ?? { "" };
 		matchCase = matchCase > 0;
 		switch(rootNumber)
@@ -276,30 +295,36 @@ ClassBrowser {
 				pool = Class.allClasses;
 			}
 			{ 2 } {
-				isClassSearch = true;
-				pool = this.currentClass.allSubclasses
+				if(this.currentClass.notNil) {
+					isClassSearch = true;
+					pool = this.currentClass.allSubclasses.asArray
+				} { ^warning.value };  // early exit
 			}
 			{ 3 } {
-				isClassSearch = false;
-				pool = this.currentClass.allSubclasses ++ this.currentClass;
-				if(this.currentClass.isMetaClass.not) {
-					pool = pool ++ pool.collect(_.class);
-				};
+				if(this.currentClass.notNil) {
+					isClassSearch = false;
+					pool = this.currentClass.allSubclasses ++ [this.currentClass];
+					if(this.currentClass.isMetaClass.not) {
+						pool = pool ++ pool.collect(_.class);
+					};
+				} { ^warning.value };  // early exit
 			}
 			{ 4 } {
-				isClassSearch = true;
-				rootdir = PathName(currentState.currentClass.filenameSymbol.asString).pathOnly;
-				pool = Class.allClasses.select({ |class|
-					PathName(class.filenameSymbol.asString).pathOnly == rootdir
-				});
+				if(this.currentClass.notNil) {
+					isClassSearch = true;
+					rootdir = PathName(currentState.currentClass.filenameSymbol.asString).pathOnly;
+					pool = Class.allClasses.select({ |class|
+						PathName(class.filenameSymbol.asString).pathOnly == rootdir
+					});
 
-				if(string.isEmpty) {
-					this.makeState(
-						pool.reject(_.isMetaClass).sort({ |a, b| a.name < b.name }),
-						searchType
-					);
-					^this	// just to force early exit
-				};
+					if(string.isEmpty) {
+						this.makeState(
+							pool.reject(_.isMetaClass).sort({ |a, b| a.name < b.name }),
+							searchType
+						);
+						^this	// early exit
+					};
+				} { ^warning.value };  // early exit
 			};
 		if (isClassSearch)
 		{

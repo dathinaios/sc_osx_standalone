@@ -3,8 +3,8 @@ Signal[float] : FloatArray {
 	*sineFill { arg size, amplitudes, phases;
 		^Signal.newClear(size).sineFill(amplitudes, phases).normalize
 	}
-	*chebyFill { arg size, amplitudes, normalize=true;
-		^Signal.newClear(size).chebyFill(amplitudes, normalize); //.normalizeTransfer //shouldn't normalize by default!
+	*chebyFill { arg size, amplitudes, normalize=true, zeroOffset=false;
+		^Signal.newClear(size).chebyFill(amplitudes, normalize, zeroOffset);
 	}
 	*hammingWindow { arg size, pad=0;
 		if (pad == 0, {
@@ -167,11 +167,23 @@ Signal[float] : FloatArray {
 		_SignalAddChebyshev
 		^this.primitiveFailed
 	}
-	chebyFill { arg amplitudes, normalize=true;
+	chebyFill { arg amplitudes, normalize=true, zeroOffset=false;
 		this.fill(0.0);
-		amplitudes.do({ arg amp, i; this.addChebyshev(i+1, amp); if(i%4==1,{this.offset(1)}); if(i%4==3,{this.offset(-1)}); }); //corrections for JMC DC offsets, as per Buffer:cheby
+		amplitudes.do({ arg amp, i;
+			this.addChebyshev(i+1, amp);
+			if (zeroOffset) {
+				if(i%4==1,{this.offset(amp)});
+				if(i%4==3,{this.offset(-1*amp)});
+			} //corrections for JMC DC offsets, as per Buffer:cheby
+		});
 
-		if(normalize,{this.normalizeTransfer}); //no automatic cheby
+		if (normalize) {
+			if (zeroOffset) {
+				this.normalizeTransfer
+			} {
+				this.normalize
+			}
+		};
 	}
 
 	//old version
@@ -265,9 +277,9 @@ Signal[float] : FloatArray {
 	amclip { arg aNumber; _AMClip; ^aNumber.performBinaryOpOnSignal('amclip', this) }
 	scaleneg { arg aNumber; _ScaleNeg; ^aNumber.performBinaryOpOnSignal('scaleneg', this) }
 	clip2 { arg aNumber=1; _Clip2; ^aNumber.performBinaryOpOnSignal('clip2', this) }
-	fold2 { arg aNumber; _Fold2; ^aNumber.performBinaryOpOnSignal('fold2', this) }
-	wrap2 { arg aNumber; _Wrap2; ^aNumber.performBinaryOpOnSignal('wrap2', this) }
-	excess { arg aNumber; _Excess; ^aNumber.performBinaryOpOnSignal('excess', this) }
+	fold2 { arg aNumber=1; _Fold2; ^aNumber.performBinaryOpOnSignal('fold2', this) }
+	wrap2 { arg aNumber=1; _Wrap2; ^aNumber.performBinaryOpOnSignal('wrap2', this) }
+	excess { arg aNumber=1; _Excess; ^aNumber.performBinaryOpOnSignal('excess', this) }
 	firstArg { arg aNumber; _FirstArg; ^aNumber.performBinaryOpOnSignal('firstArg', this) }
 
 	== { arg aNumber; _EQ; ^aNumber.performBinaryOpOnSignal('==', this) }
@@ -276,6 +288,9 @@ Signal[float] : FloatArray {
 	clip { arg lo, hi; _ClipSignal; ^this.primitiveFailed }
 	wrap { arg lo, hi; _WrapSignal; ^this.primitiveFailed }
 	fold { arg lo, hi; _FoldSignal; ^this.primitiveFailed }
+	blend { arg that, blendFrac = 0.5;
+		^this + (blendFrac * (that - this));
+	}
 
 	asInteger { _AsInt; ^this.primitiveFailed }
 	asFloat { _AsFloat; ^this.primitiveFailed }
@@ -306,9 +321,9 @@ Wavetable[float] : FloatArray {
 	}
 
 	//size must be N/2+1 for N power of two; N is eventual size of wavetable
-	*chebyFill { arg size, amplitudes, normalize=true;
+	*chebyFill { arg size, amplitudes, normalize=true, zeroOffset=false;
 
-		^Signal.chebyFill(size, amplitudes, normalize).asWavetableNoWrap; //asWavetable causes wrap here, problem
+		^Signal.chebyFill(size, amplitudes, normalize, zeroOffset).asWavetableNoWrap; //asWavetable causes wrap here, problem
 	}
 
 	*chebyFill_old { arg size, amplitudes;

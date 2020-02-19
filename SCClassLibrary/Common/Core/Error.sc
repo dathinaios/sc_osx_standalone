@@ -103,7 +103,7 @@ MethodError : Error {
 		if(protectedBacktrace.notNil, { this.postProtectedBacktrace });
 		this.dumpBackTrace;
 		// this.adviceLink.postln;
-		"^^ The preceding error dump is for %\nRECEIVER: %\n".postf(this.errorString, receiver);
+		"^^ The preceding error dump is for %\nRECEIVER: %\n\n\n".postf(this.errorString, receiver);
 	}
 	adviceLinkPage {
 		^this.class.name
@@ -164,7 +164,7 @@ DoesNotUnderstandError : MethodError {
 		if(protectedBacktrace.notNil, { this.postProtectedBacktrace });
 		this.dumpBackTrace;
 		// this.adviceLink.postln;
-		"^^ The preceding error dump is for %\nRECEIVER: %\n".postf(this.errorString, receiver);
+		"^^ The preceding error dump is for %\nRECEIVER: %\n\n\n".postf(this.errorString, receiver);
 	}
 	adviceLinkPage {
 		^"%#%".format(this.class.name, selector)
@@ -257,16 +257,20 @@ DeprecatedError : MethodError {
 			caller,
 			methodSignature.value(method)
 		);
-		if(alternateMethod.notNil, {
+		if(alternateMethod.notNil) {
 			string = string + "Use" + methodSignature.value(alternateMethod) + "instead.";
-		});
-		^string;
+		};
+
+		string = string ++ "\nThe definition of '%' is to be found here: '%'".format(method, method.filenameSymbol);
+
+		^string
 	}
 
 	reportError {
 		this.errorString.postln;
 		this.errorPathString.post;
 		// this.adviceLink.postln;
+		"\n\n".post;
 	}
 
 	throw {

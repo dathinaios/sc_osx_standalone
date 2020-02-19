@@ -5,13 +5,11 @@ Stream : AbstractFunction {
 	parent { ^nil }
 	next { ^this.subclassResponsibility(thisMethod) }
 	iter { ^this }
+	streamArg { ^this }
 
 	value { arg inval; ^this.next(inval) }
 	valueArray { ^this.next }
 
-	nextN { arg n, inval;
-		^Array.fill(n, { this.next(inval) });
-	}
 	all { arg inval;
 		// don't do this on infinite streams.
 		var array;
@@ -240,17 +238,27 @@ OneShotStream : Stream {
 }
 
 EmbedOnce : Stream  {
-	var <stream;
-	*new { arg stream;
-		^super.newCopyArgs(stream.asStream)
+	var <stream, <cleanup;
+	*new { arg stream, cleanup;
+		^super.newCopyArgs(stream.asStream, cleanup)
 	}
 	next { arg inval;
 		var val = stream.next(inval);
-		if(val.isNil) { stream = nil }; // embed once, then release memory
+		if(val.isNil) { // embed once, then release memory
+			cleanup !? { cleanup.exit(inval) };
+			stream = nil;
+			cleanup = nil;
+		} {
+			cleanup.update(val)
+		};
 		^val
+	}
+	reset {
+		stream.reset
 	}
 	storeArgs { ^[stream] }
 }
+
 
 FuncStream : Stream {
 	var <>nextFunc; // Func is evaluated for each next state
@@ -260,7 +268,7 @@ FuncStream : Stream {
 		^super.new.nextFunc_(nextFunc).resetFunc_(resetFunc).envir_(currentEnvironment)
 	}
 	next { arg inval;
-		^envir.use({ nextFunc.value(inval).processRest(inval) })
+		^envir.use({ nextFunc.value(inval) })
 	}
 	reset {
 		^envir.use({ resetFunc.value })
@@ -292,7 +300,7 @@ StreamClutch : Stream {
 		reset = true
 	}
 	step { arg inval;
-		value = stream.next(inval ? Event.default)
+		value = stream.next(inval ?? { Event.default })
 	}
 
 }
@@ -318,8 +326,7 @@ CleanupStream : Stream {
 
 // PauseStream is a stream wrapper that can be started and stopped.
 
-PauseStream : Stream
-{
+PauseStream : Stream {
 	var <stream, <originalStream, <clock, <nextBeat, <>streamHasEnded=false;
 	var isWaiting = false, era=0;
 
@@ -335,6 +342,7 @@ PauseStream : Stream
 		clock = argClock ? clock ? TempoClock.default;
 		streamHasEnded = false;
 		this.refresh; //stream = originalStream;
+		stream.clock = clock;
 		isWaiting = true;	// make sure that accidental play/stop/play sequences
 						// don't cause memory leaks
 		era = CmdPeriod.era;
@@ -351,8 +359,12 @@ PauseStream : Stream
 	}
 	reset { originalStream.reset }
 	stop {
+		var saveStream = this.stream;
 		this.prStop;
-		this.changed(\userStopped);
+ 		this.changed(\userStopped);
+		if(saveStream === thisThread) {
+			nil.alwaysYield
+		}
 	}
 	prStop {
 		stream = nil;
@@ -427,7 +439,7 @@ EventStreamPlayer : PauseStream {
 	var <>event, <>muteCount = 0, <>cleanup, <>routine;
 
 	*new { arg stream, event;
-		^super.new(stream).event_(event ? Event.default).init;
+		^super.new(stream).event_(event ?? { Event.default }).init;
 	}
 
 	init {
@@ -446,7 +458,7 @@ EventStreamPlayer : PauseStream {
 	prStop {
 		stream = nextBeat = nil;
 		isWaiting = false;
-	 }
+	}
 
 	stop {
 		cleanup.terminate;
@@ -486,6 +498,7 @@ EventStreamPlayer : PauseStream {
 		clock = argClock ? clock ? TempoClock.default;
 		streamHasEnded = false;
 		stream = originalStream;
+		stream.clock = clock;
 		isWaiting = true;	// make sure that accidental play/stop/play sequences
 						// don't cause memory leaks
 		era = CmdPeriod.era;

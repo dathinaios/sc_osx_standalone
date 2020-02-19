@@ -59,6 +59,9 @@ Dictionary : Set {
 		};
 		^result
 	}
+	++ { arg dict;
+		^this.copy.putAll(dict)
+	}
 
 	associationAt { arg key;
 		var index = this.scanFor(key);
@@ -178,7 +181,7 @@ Dictionary : Set {
 
 	merge {|that, func, fill = true|
 		var commonKeys, myKeys = this.keys, otherKeys = that.keys;
-		var res = ();
+		var res = this.species.new;
 
 		if (myKeys == otherKeys) {
 			commonKeys = myKeys
@@ -195,6 +198,18 @@ Dictionary : Set {
 			otherKeys.difference(myKeys).do { |key| res[key] = that[key] };
 		};
 		^res
+	}
+
+
+	mergeItem { |key, val, func|
+		var old;
+		if(func.notNil) {
+			old = this.at(key);
+			if(old.notNil) {
+				val = func.value(val, old)
+			}
+		};
+		this.put(key, val)
 	}
 
 	blend { |that, blend = 0.5, fill = true, specs|
@@ -258,7 +273,9 @@ Dictionary : Set {
 		^event.putAll(this);
 	}
 	embedInStream { arg event;
-		^yield(event !? { event.copy.putAll(this) })
+		var func = this.at(\embedInStream);
+		if(func.notNil) { ^func.value(this, event) };
+		^if(event.isNil) { this } { event.copy.putAll(this) }.yield
 	}
 
 	asSortedArray {
@@ -276,6 +293,23 @@ Dictionary : Set {
 		this.keysValuesDo { |key, val| array.add(key); array.add(val) };
 		^array
 	}
+
+	isAssociationArray { ^false }
+
+	asPairs { |class|
+		var res = (class ? Array).new(this.size * 2);
+		this.pairsDo { |key, val|
+			res.add(key).add(val);
+		};
+		^res
+	}
+
+	asDict { arg mergeFunc, class;
+		// the mergeFunc is ignored, because dictionary keys must differ
+		class = class ? IdentityDictionary;
+		^if(class.notNil and: { class == this.class }) { this } { this.as(class) }
+	}
+
 
 	// PRIVATE IMPLEMENTATION
 	keysValuesArrayDo { arg argArray, function;
@@ -335,6 +369,25 @@ Dictionary : Set {
 		});
 		^-2
 	}
+
+	== { arg that;
+		if(that.isKindOf(this.class).not) { ^false };
+		if(that.size != this.size) { ^false };
+		that.keysValuesDo { |key, val|
+			if(this.at(key) != val) { ^false }
+		};
+		^true
+	}
+
+	hash {
+		var hash = this.class.hash;
+		this.keysValuesDo { arg key, item;
+			hash = hash bitXor: item.hash;
+			hash = (hash << 1) bitXor: key.hash
+		};
+		^hash
+	}
+
 
 	storeItemsOn { arg stream, itemsPerLine = 5;
 		var itemsPerLinem1 = itemsPerLine - 1;
@@ -421,6 +474,65 @@ IdentityDictionary : Dictionary {
 		^array.atIdentityHashInPairs(argKey)
 	}
 
+	collect { arg function;
+		var res = this.class.new(this.size, proto, parent, know);
+		this.keysValuesDo { arg key, elem;
+			res.put(key, function.value(elem, key));
+		};
+		^res;
+	}
+	select { arg function;
+		var res = this.class.new(this.size, proto, parent, know);
+		this.keysValuesDo { arg key, elem;
+			if(function.value(elem, key)) {
+				res.put(key, elem);
+			};
+		};
+		^res;
+	}
+	reject { arg function;
+		var res = this.class.new(this.size, proto, parent, know);
+		this.keysValuesDo { arg key, elem;
+			if(function.value(elem, key).not) {
+				res.put(key, elem);
+			};
+		};
+		^res;
+	}
+
+	freezeAsParent {
+		var frozenParent = this.freeze;
+		^this.class.new(this.size, nil, frozenParent, know)
+	}
+
+	insertParent { arg newParent, insertionDepth = 0, reverseInsertionDepth = inf;
+		if(parent.isNil) { parent = newParent; ^this };
+		if(insertionDepth > 0) { parent.insertParent(newParent, insertionDepth - 1, reverseInsertionDepth); ^this };
+		newParent.insertParent(parent, reverseInsertionDepth, inf); // insert current parent back into new parent
+		parent = newParent;
+	}
+
+	== { arg that;
+		^this.superPerform('==', that)
+		and: { parent == that.parent }
+		and: { proto == that.proto }
+		and: { know == that.know }
+	}
+
+	hash {
+		var hash = know.hash;
+		hash = (hash << 1) bitXor: parent.hash;
+		hash = (hash << 1) bitXor: proto.hash;
+		hash = (hash << 1) bitXor: super.hash;
+		^hash
+	}
+
+	storeItemsOn { arg stream, itemsPerLine = 5;
+		super.storeItemsOn(stream, itemsPerLine);
+		if(proto.notNil) { stream << "\n.proto_(" <<< proto << ")" };
+		if(parent.notNil) { stream << "\n.parent_(" <<< parent << ")" };
+	}
+
 	doesNotUnderstand { arg selector ... args;
 		var func;
 		if (know) {
@@ -434,7 +546,7 @@ IdentityDictionary : Dictionary {
 				selector = selector.asGetter;
 				if(this.respondsTo(selector)) {
 					warn(selector.asCompileString
-						+ "exists a method name, so you can't use it as pseudo-method.")
+						+ "exists as a method name, so you can't use it as a pseudo-method.")
 				};
 				^this[selector] = args[0];
 			};

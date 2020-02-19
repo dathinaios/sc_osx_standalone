@@ -1,5 +1,6 @@
 Boolean {
 	*new { ^this.shouldNotImplement(thisMethod) }
+	*newCopyArgs { ^this.shouldNotImplement(thisMethod) }
 	xor { arg bool; ^(this === bool).not }
 	if { ^this.subclassResponsibility(thisMethod) }
 	not { ^this.subclassResponsibility(thisMethod) }
@@ -17,9 +18,13 @@ Boolean {
 	keywordWarnings {
 		// turn on/off warnings if a keyword argument is not found
 		_KeywordError
+		^this.primitiveFailed
 	}
-	trace { _Trace } // this is only available in a special debugging version of the app
-
+	trace {
+		// this is only available in a special debugging version of the app
+		_Trace
+		^this.primitiveFailed
+	}
 	printOn { arg stream;
 		stream.putAll(this.asString);
 	}

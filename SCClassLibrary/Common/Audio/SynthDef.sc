@@ -33,14 +33,11 @@ SynthDef {
 	}
 
 	*new { arg name, ugenGraphFunc, rates, prependArgs, variants, metadata;
-		^this.prNew(name).variants_(variants).metadata_(metadata).children_(Array.new(64))
+		^super.newCopyArgs(name.asSymbol).variants_(variants).metadata_(metadata).children_(Array.new(64))
 			.build(ugenGraphFunc, rates, prependArgs)
 	}
-	*prNew { arg name;
-		^super.new.name_(name.asString)
-	}
 
-	storeArgs { ^[name.asSymbol, func] }
+	storeArgs { ^[name, func] }
 
 	build { arg ugenGraphFunc, rates, prependArgs;
 		protect {
@@ -60,6 +57,7 @@ SynthDef {
 		};
 		^UGen.buildSynthDef.buildUgenGraph(func, rates, prependArgs);
 	}
+
 	//only write if no file exists
 	*writeOnce { arg name, func, rates, prependArgs, variants, dir, metadata, mdPlugin;
 		this.new(name, func, rates, prependArgs, variants, metadata).writeOnce(dir, mdPlugin)
@@ -273,7 +271,7 @@ SynthDef {
 	}
 
 	finishBuild {
-
+		this.addCopiesIfNeeded;
 		this.optimizeGraph;
 		this.collectConstants;
 		this.checkInputs;// will die on error
@@ -282,6 +280,15 @@ SynthDef {
 		this.topologicalSort;
 		this.indexUGens;
 		UGen.buildSynthDef = nil;
+	}
+
+	addCopiesIfNeeded {
+		// could also have PV_UGens store themselves in a separate collection
+		widthFirstUGens.do({|child|
+			if(child.isKindOf(PV_ChainUGen), {
+				child.addCopiesIfNeeded;
+			});
+		});
 	}
 
 	asBytes {
@@ -309,79 +316,84 @@ SynthDef {
 				.format(name), this).throw
 		}
 	}
-	
+
 	writeDef { arg file;
 		// This describes the file format for the synthdef files.
 		var allControlNamesTemp, allControlNamesMap;
 
-		file.putPascalString(name);
+		try {
+			file.putPascalString(name.asString);
 
-		this.writeConstants(file);
+			this.writeConstants(file);
 
-		//controls have been added by the Control UGens
-		file.putInt32(controls.size);
-		controls.do { | item |
-			file.putFloat(item);
-		};
-
-		allControlNamesTemp = allControlNames.reject { |cn| cn.rate == \noncontrol };
-		file.putInt32(allControlNamesTemp.size);
-		allControlNamesTemp.do { | item |
-			if (item.name.notNil) {
-				file.putPascalString(item.name.asString);
-				file.putInt32(item.index);
+			//controls have been added by the Control UGens
+			file.putInt32(controls.size);
+			controls.do { | item |
+				file.putFloat(item);
 			};
-		};
 
-		file.putInt32(children.size);
-		children.do { | item |
-			item.writeDef(file);
-		};
-
-		file.putInt16(variants.size);
-		if (variants.size > 0) {
-			allControlNamesMap = ();
-			allControlNamesTemp.do { |cn|
-				allControlNamesMap[cn.name] = cn;
-			};
-			variants.keysValuesDo {|varname, pairs|
-				var varcontrols;
-
-				varname = name ++ "." ++ varname;
-				if (varname.size > 32) {
-					Post << "variant '" << varname << "' name too long.\n";
-					^nil
+			allControlNamesTemp = allControlNames.reject { |cn| cn.rate == \noncontrol };
+			file.putInt32(allControlNamesTemp.size);
+			allControlNamesTemp.do { | item |
+				if (item.name.notNil) {
+					file.putPascalString(item.name.asString);
+					file.putInt32(item.index);
 				};
-				varcontrols = controls.copy;
-				pairs.pairsDo { |cname, values|
-					var cn, index;
-					cn = allControlNamesMap[cname];
-					if (cn.notNil) {
-						values = values.asArray;
-						if (values.size > cn.defaultValue.asArray.size) {
-							postf("variant: '%' control: '%' size mismatch.\n",
+			};
+
+			file.putInt32(children.size);
+			children.do { | item |
+				item.writeDef(file);
+			};
+
+			file.putInt16(variants.size);
+			if (variants.size > 0) {
+				allControlNamesMap = ();
+				allControlNamesTemp.do { |cn|
+					allControlNamesMap[cn.name] = cn;
+				};
+				variants.keysValuesDo {|varname, pairs|
+					var varcontrols;
+
+					varname = name ++ "." ++ varname;
+					if (varname.size > 32) {
+						Post << "variant '" << varname << "' name too long.\n";
+						^nil
+					};
+					varcontrols = controls.copy;
+					pairs.pairsDo { |cname, values|
+						var cn, index;
+						cn = allControlNamesMap[cname];
+						if (cn.notNil) {
+							values = values.asArray;
+							if (values.size > cn.defaultValue.asArray.size) {
+								postf("variant: '%' control: '%' size mismatch.\n",
+									varname, cname);
+								^nil
+							}{
+								index = cn.index;
+								values.do {|val, i|
+									varcontrols[index + i] = val;
+								}
+							}
+						}{
+							postf("variant: '%' control: '%' not found.\n",
 								varname, cname);
 							^nil
-						}{
-							index = cn.index;
-							values.do {|val, i|
-								varcontrols[index + i] = val;
-							}
 						}
-					}{
-						postf("variant: '%' control: '%' not found.\n",
-								varname, cname);
-						^nil
-					}
-				};
-				file.putPascalString(varname);
-				varcontrols.do { | item |
-					file.putFloat(item);
+					};
+					file.putPascalString(varname);
+					varcontrols.do { | item |
+						file.putFloat(item);
+					};
 				};
 			};
-		};
+		} { // catch
+			arg e;
+			Error("SynthDef: could not write def: %".format(e.what())).throw;
+		}
 	}
-	
+
 	writeConstants { arg file;
 		var array = FloatArray.newClear(constants.size);
 		constants.keysValuesDo { arg value, index;
@@ -406,12 +418,11 @@ SynthDef {
 			};
 		};
 		if(firstErr.notNil) {
-			("SynthDef" + this.name + "build failed").postln;
+			"SynthDef % build failed".format(this.name).postln;
 			Error(firstErr).throw
 		};
 		^true
 	}
-
 
 
 	// UGens do these
@@ -538,7 +549,7 @@ SynthDef {
 	add { arg libname, completionMsg, keepDef = true;
 		var	servers, desc = this.asSynthDesc(libname ? \global, keepDef);
 		if(libname.isNil) {
-			servers = Server.allRunningServers
+			servers = Server.allBootedServers
 		} {
 			servers = SynthDescLib.getLib(libname).servers
 		};
@@ -560,9 +571,9 @@ SynthDef {
 
 	// only send to servers
 	send { arg server, completionMsg;
-		var servers = (server ?? { Server.allRunningServers }).asArray;
+		var servers = (server ?? { Server.allBootedServers }).asArray;
 		servers.do { |each|
-			if(each.serverRunning.not) {
+			if(each.hasBooted.not) {
 				"Server % not running, could not send SynthDef.".format(server.name).warn
 			};
 			if(metadata.trueAt(\shouldNotSend)) {
@@ -616,7 +627,7 @@ SynthDef {
 				lib.servers.do { arg server;
 					this.doSend(server.value, completionMsg)
 				};
-				desc = lib[this.name.asSymbol];
+				desc = lib[this.name];
 				desc.metadata = metadata;
 				SynthDesc.populateMetadataFunc.value(desc);
 				desc.writeMetadata(path, mdPlugin);
@@ -635,10 +646,7 @@ SynthDef {
 		var	lib, stream = CollStream(this.asBytes);
 		libname ?? { libname = \global };
 		lib = SynthDescLib.getLib(libname);
-		SynthDesc.readFile(stream, keepDef, lib.synthDescs);
-		desc = lib[name.asSymbol];
-		if(keepDef) { desc.def = this };
-		if(metadata.notNil) { desc.metadata = metadata };
+		desc = lib.readDescFromDef(stream, keepDef, this, metadata);
 		^desc
 	}
 

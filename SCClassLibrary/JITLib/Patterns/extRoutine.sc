@@ -1,11 +1,11 @@
-+Pattern {
++ Pattern {
 	lock { arg n=1;
 		^Pfin(n.asStream, this.asStream)
 	}
 }
 
 
-+Stream {
++ Stream {
 
 	fastForward { arg by, tolerance=0, inevent;
 		var t = 0, delta = 0, event;
@@ -14,12 +14,12 @@
 		while { t.roundUp(tolerance) < by }
 		{
 			event = this.next(inevent.copy);
-			if(event.isNil) { ("end of stream. Time left:" + (by - t)).inform; ^t - by };
+			if(event.isNil) { ("end of stream. Time left:" + (by - t)).postln; ^t - by };
 
 			event = event.copy.put(\freq, \rest);
 			event.play;
 			delta = event.delta;
-			if(delta.isNil) { ("end of stream. Time left:" + (by - t)).inform; ^t - by };
+			if(delta.isNil) { ("end of stream. Time left:" + (by - t)).postln; ^t - by };
 
 			t = t + delta;
 
@@ -28,7 +28,6 @@
 	}
 
 }
-
 
 + EventStreamPlayer {
 
@@ -44,7 +43,8 @@
 
 
 }
-+PauseStream {
+
++ PauseStream {
 
 	xplay { arg fadeTime, argClock, doReset = false, quant=1.0;
 		this.play(argClock, doReset, quant);

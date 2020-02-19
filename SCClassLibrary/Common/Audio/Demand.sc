@@ -9,7 +9,7 @@ Demand : MultiOutUGen {
 		inputs = argInputs;
 		^this.initOutputs(inputs.size - 2, rate)
 	}
- 	checkInputs { ^this.checkSameRateAsFirstInput }
+	checkInputs { ^this.checkSameRateAsFirstInput }
 }
 
 Duty : UGen {
@@ -24,8 +24,8 @@ Duty : UGen {
 		^if(inputs.at(0).rate === \demand) {
 			if (inputs.at(1).rate !== \demand and: { inputs.at(1).rate !== \scalar } and:
 				{ inputs.at(1).rate !== rate }) {
- 				("reset input is not" + rate + "rate: " + inputs.at(1) + inputs.at(1).rate);
- 			}
+				("reset input is not" + rate + "rate: " + inputs.at(1) + inputs.at(1).rate);
+			}
 		} {
 			this.checkValidInputs
 		}
@@ -38,16 +38,6 @@ TDuty : Duty {
 	}
 	*kr { arg dur = 1.0, reset = 0.0, level = 1.0, doneAction = 0, gapFirst = 0;
 		^this.multiNew('control', dur, reset, doneAction, level, gapFirst)
-	}
-}
-
-// old version with gap first
-TDuty_old  {
-	*ar { arg dur = 1.0, reset = 0.0, level = 1.0, doneAction = 0;
-		^TDuty.ar(dur, reset, level, doneAction, 1)
-	}
-	*kr { arg dur = 1.0, reset = 0.0, level = 1.0, doneAction = 0;
-		^TDuty.kr(dur, reset, level, doneAction, 1)
 	}
 }
 
@@ -70,8 +60,8 @@ DemandEnvGen : UGen {
 }
 
 DUGen : UGen {
- 	// some n-ary op special cases
- 	linlin { arg inMin, inMax, outMin, outMax, clip=\minmax;
+	// some n-ary op special cases
+	linlin { arg inMin, inMax, outMin, outMax, clip=\minmax;
 		^((this.prune(inMin, inMax, clip)-inMin)/(inMax-inMin) * (outMax-outMin) + outMin);
 	}
 
@@ -164,9 +154,9 @@ Dstutter : DUGen {
 	}
 }
 
-Donce : DUGen {
-	*new { arg in;
-		^this.multiNew('demand', in)
+Dconst : DUGen {
+	*new { arg sum, in, tolerance = 0.001;
+		^this.multiNew('demand', sum, in, tolerance);
 	}
 }
 
@@ -191,21 +181,40 @@ Dpoll : DUGen {
 // behave as identical in multiple uses
 
 Dunique : UGen {
-	var <>source, stutter, numUses;
+	var <protected, buffer, writer, iwr;
 
-	*new { arg source;
-		^super.new.source_(source).init
+	*new { arg source, maxBufferSize = 1024, protected = true;
+		^super.new.init(source, maxBufferSize, protected)
 	}
 
-	init {
-		numUses = 0;
-		stutter = Dstutter(1, source);
+	init { arg source, maxBufferSize, argProtected;
+		protected = argProtected.asBoolean;
+		buffer = LocalBuf(maxBufferSize).clear;
+		if(protected) {
+			iwr = LocalBuf(1).clear;
+			// here we also limit to the largest integer a 32bit float can correctly address
+			writer = Dbufwr(source, buffer, Dbufwr(Dseries(0, 1, 16777216), iwr), 1);
+		} {
+			// here we can simply loop
+			writer = Dbufwr(source, buffer, Dseq([Dseries(0, 1, maxBufferSize)], inf), 0);
+		}
 	}
 
 	asUGenInput {
-		numUses = numUses + 1;
-		stutter.inputs[0] = numUses;
-		^stutter
+		var index, ird, overrun;
+		var brd = buffer <! writer; // we call the writer from each reader
+
+		if(protected) {
+			ird = LocalBuf(1).clear;
+			index = Dbufwr(Dseries(0, 1, inf), ird);
+			overrun = Dbufrd(iwr) - Dbufrd(ird) > buffer.numFrames;
+			// catch buffer overrun by switching to a zero length series
+			brd = Dswitch1([brd, Dseries(length:0)], overrun);
+		} {
+			index = Dseq([Dseries(0, 1, buffer.numFrames)], inf)
+		};
+
+		^Dbufrd(brd, index, 1);
 	}
 
 }

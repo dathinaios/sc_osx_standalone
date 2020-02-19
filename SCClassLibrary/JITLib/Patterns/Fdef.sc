@@ -5,7 +5,6 @@ Maybe : Ref {
 	classvar <callers, <current, <>callFunc;
 	classvar <>defaultValue;
 	classvar <>protected = false, <>verbose = false;
-	classvar <>defaultValue=1;
 
 	source { ^value }
 	source_ { arg obj;
@@ -19,7 +18,7 @@ Maybe : Ref {
 		^this.reduceFuncProxy(args)
 	}
 	valueArray { arg args;
-			^this.reduceFuncProxy(args)
+		^this.reduceFuncProxy(args)
 	}
 	valueEnvir { arg ... args;
 		^this.notYetImplemented(thisMethod)
@@ -43,6 +42,32 @@ Maybe : Ref {
 	}
 	<> { arg that;
 		^o (this, that)
+	}
+
+	// override some collection methods
+
+	at { arg ... args;
+		^this.composeNAryOp(\at, args)
+	}
+
+	atAll { arg ... args;
+		^this.composeNAryOp(\atAll, args)
+	}
+
+	put { arg ... args;
+		^this.composeNAryOp(\put, args)
+	}
+
+	putAll { arg ... args;
+		^this.composeNAryOp(\putAll, args)
+	}
+
+	add { arg ... args;
+		^this.composeNAryOp(\add, args)
+	}
+
+	addAll { arg ... args;
+		^this.composeNAryOp(\addAll, args)
 	}
 
 	// use in list comprehension
@@ -91,27 +116,26 @@ Maybe : Ref {
 	// used by AbstractFunction:reduceFuncProxy
 	// to prevent reduction of enclosed functions
 	valueFuncProxy { arg args;
-		^this.catchRecursion {
-			value.valueFuncProxy(args)
-		} ?? { this.valueEmpty(args) };
-	}
-
-	valueEmpty { arg args;
-		if(verbose) {
-			("* ? incomplete definition: %\n").postf(this.infoString(args))
+		if(verbose and: { value.isNil }) {
+			("Maybe: incomplete definition: %\n").postf(this.infoString(args))
 		};
-		^defaultValue
+		^this.catchRecursion {
+			(value ? defaultValue).valueFuncProxy(args)
+		}
 	}
 
 	reduceFuncProxy { arg args, protect=true;
+		if(verbose and: { value.isNil }) {
+			("Maybe: incomplete definition: %\n").postf(this.infoString(args))
+		};
 
 		^if(protect.not) {
-			value.reduceFuncProxy(args)
+			(value ? defaultValue).reduceFuncProxy(args)
 		} {
 			this.catchRecursion {
-				value.reduceFuncProxy(args)
+				(value ? defaultValue).reduceFuncProxy(args)
 			}
-		} ?? { this.valueEmpty(args) };
+		}
 	}
 
 	catchRecursion { arg func;
@@ -140,8 +164,8 @@ Maybe : Ref {
 				if(verbose and: { exception.isKindOf(Exception)} ) {
 					("Error or incomplete specification" + exception.errorString).postln;
 				};
-			/*	if(exception.isKindOf(this.class).not) {
-					Exception.throw;
+				/*	if(exception.isKindOf(this.class).not) {
+				Exception.throw;
 				}*/
 				// remove again
 				callers.pop;
@@ -178,8 +202,8 @@ Maybe : Ref {
 	}
 
 	storeOn { arg stream;
-	// maybe should try to catch a recursion here:
-	stream << this.class.name << "(" <<< value << ")" }
+		// maybe should try to catch a recursion here:
+		stream << this.class.name << "(" <<< value << ")" }
 
 }
 

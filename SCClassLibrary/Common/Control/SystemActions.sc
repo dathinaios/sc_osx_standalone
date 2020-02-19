@@ -43,7 +43,6 @@ CmdPeriod : AbstractSystemAction {
 		if(clearClocks, {
 			SystemClock.clear;
 			AppClock.clear;
-	//		TempoClock.default.clear;
 		});
 
 		objects.copy.do({ arg item; item.doOnCmdPeriod;  });
@@ -93,7 +92,7 @@ StartUp : AbstractSystemAction {
 
 
 	*defer { arg object;
-		 if(done) { object.doOnStartUp } { this.add(object) }
+		if(done) { object.doOnStartUp } { this.add(object) }
 	}
 
 
@@ -159,11 +158,11 @@ AbstractServerAction : AbstractSystemAction {
 	}
 
 	*addToAll { arg object;
-		Server.all.do({ arg s; this.add(object, s) });
+		this.add(object, \all);
 	}
 
 	*remove { arg object, server;
-		if(server.isNil) { server = \default };
+		if(server.isNil) { server = \all };
 		this.objects !? { this.objects.at(server).remove(object) };
 	}
 

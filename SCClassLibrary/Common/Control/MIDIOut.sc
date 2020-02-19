@@ -10,16 +10,17 @@ MIDIEndPoint {
 }
 
 MIDIClient {
+	classvar <myinports, <myoutports; // for linux it is useful to keep track of how many we open ourselves
 	classvar <sources, <destinations;
 	classvar <initialized=false;
-	*init { arg inports, outports; // by default initialize all available ports
+	*init { arg inports, outports, verbose=true; // by default initialize all available ports
 								// you still must connect to them using MIDIIn.connect
 
 		this.prInitClient;
 		this.list;
 		if(inports.isNil,{inports = sources.size});
 		if(outports.isNil,{outports = destinations.size});
-//			this.disposeClient;
+		// this.disposeClient;
 
 		this.prInit(inports,outports);
 		initialized = true;
@@ -34,15 +35,19 @@ MIDIClient {
 				++ " outport(s).").postln;
 			"Some expected MIDI devices may not be available.".postln;
 		});
+		myinports = inports;
+		myoutports = outports;
 
 		this.list;
 
 		ShutDown.add { this.disposeClient };
 
-		Post << "MIDI Sources:" << Char.nl;
-		sources.do({ |x| Post << Char.tab << x << Char.nl });
-		Post << "MIDI Destinations:" << Char.nl;
-		destinations.do({ |x| Post << Char.tab << x << Char.nl });
+		if ( verbose,{
+			Post << "MIDI Sources:" << Char.nl;
+			sources.do({ |x| Post << Char.tab << x << Char.nl });
+			Post << "MIDI Destinations:" << Char.nl;
+			destinations.do({ |x| Post << Char.tab << x << Char.nl });
+		});
 	}
 	*list {
 		var list;
@@ -69,12 +74,35 @@ MIDIClient {
 		^this.primitiveFailed
 	}
 	*disposeClient {
+		this.prDisposeClient;
+		initialized = false;
+	}
+	*prDisposeClient {
 		_DisposeMIDIClient
 		^this.primitiveFailed
 	}
 	*restart {
 		_RestartMIDI
 		^this.primitiveFailed
+	}
+
+	// overridden in Linux:
+	*externalSources{
+		^sources;
+	}
+
+	*externalDestinations{
+		^destinations;
+	}
+
+	*getClientID {
+		if (thisProcess.platform.name != \linux) {
+			warn("% is only implemented in linux,"
+				"and should never be called directly in user code."
+				.format(thisMethod)
+			);
+		};
+		^nil
 	}
 }
 
@@ -119,6 +147,9 @@ MIDIIn {
 	<> noteOnList, <> noteOffList, <> polyList,
 	<> controlList, <> programList,
 	<> touchList, <> bendList;
+
+	classvar
+	<> noteOnZeroAsNoteOff = true;
 
 	// safer than global setters
 	*addFuncTo { |what, func|
@@ -187,8 +218,13 @@ MIDIIn {
 		action.value(src, status, a, b, c);
 	}
 	*doNoteOnAction { arg src, chan, num, veloc;
-		noteOn.value(src, chan, num, veloc);
-		this.prDispatchEvent(noteOnList, \noteOn, src, chan, num, veloc);
+		if ( noteOnZeroAsNoteOff and: ( veloc == 0 ) ){
+			noteOff.value(src, chan, num, veloc);
+			this.prDispatchEvent(noteOffList, \noteOff, src, chan, num, veloc);
+		}{
+			noteOn.value(src, chan, num, veloc);
+			this.prDispatchEvent(noteOnList, \noteOn, src, chan, num, veloc);
+		};
 	}
 	*doNoteOffAction { arg src, chan, num, veloc;
 		noteOff.value(src, chan, num, veloc);
@@ -237,12 +273,25 @@ MIDIIn {
 	*findPort { arg deviceName,portName;
 		^MIDIClient.sources.detect({ |endPoint| endPoint.device == deviceName and: {endPoint.name == portName}});
 	}
-	*connectAll {
-		if(MIDIClient.initialized.not,{ MIDIClient.init });
-		MIDIClient.sources.do({ |src,i|
+
+	*disconnectAll {
+		if(MIDIClient.initialized,{
+			MIDIClient.externalSources.do({ |src,i|
+				MIDIIn.disconnect(i,src);
+			});
+		});
+	}
+
+	*connectAll { |verbose=true|
+		if(MIDIClient.initialized.not,
+			{ MIDIClient.init(verbose: verbose) },
+			{ MIDIIn.disconnectAll; MIDIClient.list; }
+		);
+		MIDIClient.externalSources.do({ |src,i|
 			MIDIIn.connect(i,src);
 		});
 	}
+
 	*connect { arg inport=0, device=0;
 		var uid,source;
 		if(MIDIClient.initialized.not,{ MIDIClient.init });
@@ -301,9 +350,11 @@ MIDIIn {
 	}
 	*connectByUID {arg inport, uid;
 		_ConnectMIDIIn
+		^this.primitiveFailed;
 	}
 	*disconnectByUID {arg inport, uid;
 		_DisconnectMIDIIn
+		^this.primitiveFailed;
 	}
 
 	*prDispatchEvent { arg eventList, status, port, chan, b, c;
@@ -325,7 +376,7 @@ MIDIIn {
 }
 
 MIDIOut {
-	var <>port, <>uid, <>latency=0.2;
+	var <>port, <>uid, <>latency = 0.2;
 
 	*new { arg port, uid;
 		if(thisProcess.platform.name != \linux) {
@@ -334,23 +385,42 @@ MIDIOut {
 			^super.newCopyArgs(port, uid ?? 0 );
 		}
 	}
-	*newByName { arg deviceName,portName,dieIfNotFound=true;
-		var endPoint,index;
-		endPoint = MIDIClient.destinations.detect({ |ep,epi|
+	*newByName { arg deviceName, portName, dieIfNotFound = true;
+		var endPoint, index;
+		endPoint = MIDIClient.destinations.detect { |ep,epi|
 			index = epi;
-			ep.device == deviceName and: {ep.name == portName}
-		});
-		if(endPoint.isNil,{
-			if(dieIfNotFound,{
+			ep.device == deviceName and: { ep.name == portName }
+		};
+		if(endPoint.isNil) {
+			if(dieIfNotFound) {
 				Error("Failed to find MIDIOut port " + deviceName + portName).throw;
-			},{
+			} {
 				("Failed to find MIDIOut port " + deviceName + portName).warn;
-			});
-		});
-		^this.new(index,endPoint.uid)
+			};
+		};
+		if(thisProcess.platform.name != \linux) {
+			^this.new(index, endPoint.uid)
+		} {
+			if(index < MIDIClient.myoutports) {
+				// 'index' here is for "SuperCollider:out0", ":out1" etc.
+				// Practically speaking, this establishes associations:
+				// out0 --> destinations[0]
+				// out1 --> destinations[1] and so on.
+				// It looks weird but, in fact, it does ensure a 1-to-1 connection.
+				// Explained further in MIDIOut help.
+				^this.new(index, endPoint.uid)
+			} {
+				// If you didn't initialize enough MIDI output ports,
+				// it will connect the new device to 0.
+				// Connections with a UID are always 1-to-1.
+				^this.new(0, endPoint.uid)
+			}
+		}
 	}
-	*findPort { arg deviceName,portName;
-		^MIDIClient.destinations.detect({ |endPoint| endPoint.device == deviceName and: {endPoint.name == portName}});
+	*findPort { arg deviceName, portName;
+		^MIDIClient.destinations.detect { |endPoint|
+			endPoint.device == deviceName and: { endPoint.name == portName }
+		};
 	}
 
 	write { arg len, hiStatus, loStatus, a=0, b=0;
@@ -420,6 +490,7 @@ MIDIOut {
 
 	send { arg outport, uid, len, hiStatus, loStatus, a=0, b=0, late;
 		_SendMIDIOut
+		^this.primitiveFailed;
 	}
 
 	prSysex { arg uid, packet;

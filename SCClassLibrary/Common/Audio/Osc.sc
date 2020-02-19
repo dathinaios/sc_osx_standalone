@@ -104,16 +104,13 @@ LFSaw : PureUGen {
 	}
 }
 
-LFPar : LFSaw
-{
+LFPar : LFSaw {
 }
 
-LFCub : LFSaw
-{
+LFCub : LFSaw {
 }
 
-LFTri : LFSaw
-{
+LFTri : LFSaw {
 }
 
 LFGauss : UGen {
@@ -241,16 +238,16 @@ Select : PureUGen {
 		arg which, array;
 		^this.multiNewList(['control', which] ++ array)
 	}
- 	checkInputs {
- 		if (rate == 'audio', {
- 			for(1, inputs.size - 1, { arg i;
- 				if (inputs.at(i).rate != 'audio', {
- 					^("input was not audio rate: " + inputs.at(i));
- 				});
- 			});
- 		});
- 		^this.checkValidInputs
- 	}
+	checkInputs {
+		if (rate == 'audio', {
+			for(1, inputs.size - 1, { arg i;
+				if (inputs.at(i).rate != 'audio', {
+					^("input was not audio rate: " + inputs.at(i));
+				});
+			});
+		});
+		^this.checkValidInputs
+	}
 }
 
 SelectX {
@@ -279,37 +276,44 @@ LinSelectX : SelectX {
 	}
 }
 
-SelectXFocus { 	// does not wrap (yet).
-	*new { arg which, array, focus=1;
-		^Mix(array.collect({ arg in, i;
-			(1 - ((which-i).abs * focus) ).max(0) * in;
-		}))
+SelectXFocus {
+	*new { arg which, array, focus=1, wrap = false;
+		if(wrap) {
+			^Mix(array.collect({ arg in, i;
+				(1 - (moddif(which, i, array.size) * focus)).max(0) * in
+			}))
+		} {
+			^Mix(array.collect({ arg in, i;
+				(1 - (absdif(which, i) * focus)).max(0) * in;
+			}))
+		}
 	}
-	*ar { arg which, array, focus=1;
-		^this.new(which, array, focus);
+
+	*ar { arg which, array, focus=1, wrap = false;
+		^this.new(which, array, focus, wrap);
 	}
-	*kr { arg which, array, focus=1;
-		^this.new(which, array, focus);
+	*kr { arg which, array, focus=1, wrap = false;
+		^this.new(which, array, focus, wrap);
 	}
 }
 
 Vibrato : PureUGen {
 	*ar {
 		arg freq = 440.0, rate = 6, depth = 0.02, delay = 0.0, onset = 0.0,
-				rateVariation = 0.04, depthVariation = 0.1, iphase = 0.0;
-		^this.multiNew('audio', freq, rate, depth, delay, onset, rateVariation, depthVariation, iphase)
+				rateVariation = 0.04, depthVariation = 0.1, iphase = 0.0, trig = 0.0;
+		^this.multiNew('audio', freq, rate, depth, delay, onset, rateVariation, depthVariation, iphase, trig)
 	}
 	*kr {
 		arg freq = 440.0, rate = 6, depth = 0.02, delay = 0.0, onset = 0.0,
-				rateVariation = 0.04, depthVariation = 0.1, iphase = 0.0;
-		^this.multiNew('control', freq, rate, depth, delay, onset, rateVariation, depthVariation, iphase)
+				rateVariation = 0.04, depthVariation = 0.1, iphase = 0.0, trig = 0.0;
+		^this.multiNew('control', freq, rate, depth, delay, onset, rateVariation, depthVariation, iphase, trig)
 	}
 }
 
 
 TChoose {
 	*ar { arg trig, array;
-		^Select.ar(TIRand.kr(0, array.lastIndex, trig), array)
+		^Select.ar(TIRand.ar(0, array.lastIndex, trig), array)
 
 	}
 	*kr { arg trig, array;

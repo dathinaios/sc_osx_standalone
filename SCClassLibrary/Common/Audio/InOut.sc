@@ -1,5 +1,4 @@
-ControlName
-{
+ControlName {
 	var <>name, <>index, <>rate, <>defaultValue, <>argNum, <>lag;
 
 	*new { arg name, index, rate, defaultValue, argNum, lag;
@@ -101,7 +100,7 @@ AudioControl : MultiOutUGen {
 TrigControl : Control {}
 
 LagControl : Control {
- 	*kr { arg values, lags;
+	*kr { arg values, lags;
 		var outputs;
 
 		values = values.asArray;
@@ -124,6 +123,9 @@ LagControl : Control {
 		});
 		^outputs
 	}
+	*ar { arg values, lags;
+		^AudioControl.ar(values).lag(lags)
+	}
 	*ir {
 		^this.shouldNotImplement(thisMethod)
 	}
@@ -143,7 +145,7 @@ LagControl : Control {
 }
 
 AbstractIn : MultiOutUGen {
- 	*isInputUGen { ^true }
+	*isInputUGen { ^true }
 }
 
 In : AbstractIn {
@@ -206,31 +208,35 @@ InTrig : AbstractIn {
 AbstractOut : UGen {
 	numOutputs { ^0 }
 	writeOutputSpecs {}
- 	checkInputs {
- 		if (rate == 'audio', {
- 			for(this.class.numFixedArgs, inputs.size - 1, { arg i;
- 				if (inputs.at(i).rate != 'audio', {
- 					^(" input at index " + i +
- 						"(" + inputs.at(i) + ") is not audio rate");
- 				});
- 			});
- 		});
- 		^this.checkValidInputs
- 	}
+	checkInputs {
+		if (rate == 'audio', {
+			for(this.class.numFixedArgs, inputs.size - 1, { arg i;
+				if (inputs.at(i).rate != 'audio', {
+					^(" input at index " + i +
+						"(" + inputs.at(i) + ") is not audio rate");
+				});
+			});
+		}, {
+			if(inputs.size <= this.class.numFixedArgs, {
+				^"missing input at index 1"
+			})
+		});
+		^this.checkValidInputs
+	}
 
- 	*isOutputUGen { ^true }
+	*isOutputUGen { ^true }
 	*numFixedArgs { ^this.subclassResponsibility(thisMethod) }
 
- 	numAudioChannels {
- 		^inputs.size - this.class.numFixedArgs
- 	}
+	numAudioChannels {
+		^inputs.size - this.class.numFixedArgs
+	}
 
- 	writesToBus { ^this.subclassResponsibility(thisMethod) }
+	writesToBus { ^this.subclassResponsibility(thisMethod) }
 }
 
 Out : AbstractOut {
 	*ar { arg bus, channelsArray;
-		channelsArray = this.replaceZeroesWithSilence(channelsArray.asArray);
+		channelsArray = this.replaceZeroesWithSilence(channelsArray.asUGenInput(this).asArray);
 		this.multiNewList(['audio', bus] ++ channelsArray)
 		^0.0		// Out has no output
 	}
@@ -249,7 +255,7 @@ OffsetOut : Out {
 
 LocalOut : AbstractOut {
 	*ar { arg channelsArray;
-		channelsArray = this.replaceZeroesWithSilence(channelsArray.asArray);
+		channelsArray = this.replaceZeroesWithSilence(channelsArray.asUGenInput(this).asArray);
 		this.multiNewList(['audio'] ++ channelsArray)
 		^0.0		// LocalOut has no output
 	}
@@ -264,7 +270,7 @@ LocalOut : AbstractOut {
 
 XOut : AbstractOut {
 	*ar { arg bus, xfade, channelsArray;
-		channelsArray = this.replaceZeroesWithSilence(channelsArray.asArray);
+		channelsArray = this.replaceZeroesWithSilence(channelsArray.asUGenInput(this).asArray);
 		this.multiNewList(['audio', bus, xfade] ++ channelsArray)
 		^0.0		// Out has no output
 	}
@@ -273,38 +279,5 @@ XOut : AbstractOut {
 		^0.0		// Out has no output
 	}
 	*numFixedArgs { ^2 }
-	checkInputs {
- 		if (rate == 'audio', {
- 			for(2, inputs.size - 1, { arg i;
- 				if (inputs.at(i).rate != 'audio', {
- 					^(" input at index " + i +
- 						"(" + inputs.at(i) + ") is not audio rate");
- 				});
- 			});
- 		});
- 		^this.checkValidInputs
- 	}
- 	writesToBus { ^true }
-}
-
-
-SharedOut : AbstractOut {
-	*kr { arg bus, channelsArray;
-		warn("SharedOut is deprecated and will be removed. Please use Bus-getSynchronous instead.");
-		this.multiNewList(['control', bus] ++ channelsArray.asArray)
-		^0.0		// Out has no output
-	}
-	*numFixedArgs { ^1 }
-	writesToBus { ^false }
-}
-
-SharedIn : AbstractIn {
-	*kr { arg bus = 0, numChannels = 1;
-		warn("SharedIn is deprecated and will be removed. Please use Bus-setSynchronous instead.");
-		^this.multiNew('control', numChannels, bus)
-	}
-	init { arg numChannels ... argBus;
-		inputs = argBus.asArray;
-		^this.initOutputs(numChannels, rate)
-	}
+	writesToBus { ^true }
 }

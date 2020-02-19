@@ -1,7 +1,7 @@
 EZSlider : EZGui {
 
-	var <sliderView, <numberView, <unitView, <>controlSpec,
-		  popUp=false, numSize,numberWidth,unitWidth, gap;
+	var <sliderView, <numberView, <unitView, <>controlSpec;
+	var numSize,numberWidth,unitWidth;
 	var <>round = 0.001;
 
 	*new { arg parent, bounds, label, controlSpec, action, initVal,
@@ -42,16 +42,16 @@ EZSlider : EZGui {
 
 		// instert the views
 		label.notNil.if{ //only add a label if desired
-			labelView = GUI.staticText.new(view, labelBounds);
+			labelView = StaticText.new(view, labelBounds);
 			labelView.string = label;
 		};
 
 		(unitWidth>0).if{ //only add a unitLabel if desired
-			unitView = GUI.staticText.new(view, unitBounds);
+			unitView = StaticText.new(view, unitBounds);
 		};
 
-		sliderView = GUI.slider.new(view, sliderBounds);
-		numberView = GUI.numberBox.new(view, numBounds);
+		sliderView = Slider.new(view, sliderBounds);
+		numberView = NumberBox.new(view, numBounds);
 
 		// set view parameters and actions
 
@@ -63,18 +63,19 @@ EZSlider : EZGui {
 		action = argAction;
 
 		sliderView.action = {
-			this.valueAction_(controlSpec.map(sliderView.value));
+			this.valueActionIfChanged_(controlSpec.map(sliderView.value));
 		};
 
+
 		sliderView.receiveDragHandler = { arg slider;
-			slider.valueAction = controlSpec.unmap(GUI.view.currentDrag);
+			slider.valueAction = controlSpec.unmap(View.currentDrag);
 		};
 
 		sliderView.beginDragAction = { arg slider;
 			controlSpec.map(slider.value)
 		};
 
-		numberView.action = { this.valueAction_(numberView.value) };
+		numberView.action = { this.valueActionIfChanged_(numberView.value) };
 
 		numberStep = controlSpec.step;
 		if (numberStep == 0) {
@@ -94,13 +95,13 @@ EZSlider : EZGui {
 		}{
 			this.value_(initVal);
 		};
-		
+
 		if (labelView.notNil) {
 			labelView.mouseDownAction = {|view, x, y, modifiers, buttonNumber, clickCount|
 				if(clickCount == 2, {this.editSpec});
 			}
 		};
-		
+
 		this.prSetViewParams;
 
 	}
@@ -244,7 +245,7 @@ EZSlider : EZGui {
 						);
 				},
 
-			 \vert, {
+			\vert, {
 				hasLabel.not.if{ gap1 = 0@0; labelSize.x = 0 ;};
 				hasLabel.not.if{labelH=0};
 				labelBounds = (rect.width@labelH).asRect; // to top
@@ -263,7 +264,7 @@ EZSlider : EZGui {
 					);
 				},
 
-			 \horz, {
+			\horz, {
 				hasLabel.not.if{ gap1 = 0@0; labelSize.x = 0 ;};
 				labelSize.y = rect.height;
 				labelBounds = (labelSize.x@labelSize.y).asRect; //to left
@@ -282,7 +283,7 @@ EZSlider : EZGui {
 
 		^[labelBounds, numBounds, sliderBounds, unitBounds].collect{arg v; v.moveBy(margin.x,margin.y)}
 	}
-	
+
 	update {arg changer, what ...moreArgs;
 		var oldValue;
 		if(changer === controlSpec, {
@@ -291,21 +292,24 @@ EZSlider : EZGui {
 			if(this.value != oldValue, { this.doAction });
 		});
 	}
-	
+
 	editSpec {
-		var ezspec;
+		var ezspec, val;
+		val = this.value;
 		[labelView, sliderView, numberView, unitView].do({|view|
 			view.notNil.if({ view.enabled_(false).visible_(false)});
 		});
-		ezspec = EZControlSpecEditor(view, view.bounds.moveTo(0,0), controlSpec: controlSpec, layout: layout);
+		ezspec = EZControlSpecEditor(view, view.bounds.moveTo(0,0), controlSpec: controlSpec.copy, layout: layout);
 		ezspec.labelView.mouseDownAction = {|view, x, y, modifiers, buttonNumber, clickCount|
 			if(clickCount == 2, {
+				controlSpec = ezspec.controlSpec;
 				ezspec.remove;
 				[labelView, sliderView, numberView, unitView].do({|view|
 					view.notNil.if({ view.enabled_(true).visible_(true)});
 				});
+				this.value = val;
 			});
-		};			
+		};
 	}
 
 }

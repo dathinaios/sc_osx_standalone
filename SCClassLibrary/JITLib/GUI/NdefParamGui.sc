@@ -1,5 +1,3 @@
-// list of named params - if single number, show EZSlider,
-// else show EZText
 
 NdefParamGui : EnvirGui {
 	var <drags;
@@ -46,26 +44,23 @@ NdefParamGui : EnvirGui {
 
 		labelWidth = zone.bounds.width * 0.15;
 
-		#drags, valFields = { |i|
-			var drag, field;
-
-			try { // QT temp fix.
-				drag = DragBoth(zone, Rect(0, 0, sinkWidth, skin.buttonHeight))
+		#drags, paramViews = { |i|
+			var drag = DragBoth(zone, Rect(0, 0, sinkWidth, skin.buttonHeight))
 				.string_("-").align_(\center)
 				.visible_(false)
-				.font_(font);
-			};
-			drag.action_(this.dragAction(i));
+				.font_(font)
+				.action_(this.dragAction(i));
 
-			field = CompositeView(zone, Rect(0, 0, bounds.width - sinkWidth - 20, height))
-			.resize_(2)
-			.background_(skin.background);
+			var parView = ParamView(zone, Rect(0, 0, bounds.width - sinkWidth - 20, height))
+			// .resize_(2)
+			.background_(skin.background)
+			.useRanger_({ this.useRanger });
 
-			[drag, field];
+			parView.zone.visible_(false);
+
+			[drag, parView];
 
 		}.dup(numItems).flop;
-
-		widgets = nil.dup(numItems); // keep EZGui types here
 
 		zone.decorator.reset.shift(zone.bounds.width - 16, 0);
 
@@ -81,7 +76,7 @@ NdefParamGui : EnvirGui {
 	}
 
 	getState {
-		var settings, newKeys, overflow;
+		var settings, newKeys, overflow, currSpecs;
 
 		if (object.isNil) {
 			^(name: 'anon', settings: [], editKeys: [], overflow: 0, keysRotation: 0)
@@ -93,13 +88,21 @@ NdefParamGui : EnvirGui {
 		overflow = (newKeys.size - numItems).max(0);
 		keysRotation = keysRotation.clip(0, overflow);
 		newKeys = newKeys.drop(keysRotation).keep(numItems);
+		currSpecs = newKeys.collect { |key|
+			var pair = settings.detect { |pair| pair[0] == key };
+			[key, this.getSpec(key, pair[1])];
+		};
 
 		^(object: object, editKeys: newKeys, settings: settings,
-			overflow: overflow, keysRotation: keysRotation)
+			overflow: overflow, keysRotation: keysRotation,
+			specs: currSpecs
+		)
 	}
 
 	checkUpdate {
 		var newState = this.getState;
+		var newKeys = newState[\editKeys];
+		var newSpecs = newState[\specs];
 
 		if (newState == prevState) {
 			^this
@@ -107,7 +110,7 @@ NdefParamGui : EnvirGui {
 
 		if (object.isNil) {
 			prevState = newState;
-			^this.clearFields(0);
+			^this.showFields(0);
 		};
 
 		if (newState[\overflow] > 0) {
@@ -119,18 +122,18 @@ NdefParamGui : EnvirGui {
 			scroller.visible_(false);
 		};
 
-		if (newState[\editKeys] == prevState[\editKeys]) {
-			this.setByKeys(newState[\editKeys], newState[\settings]);
+		if (newKeys == prevState[\editKeys]) {
+			this.setByKeys(newKeys, newState[\settings]);
 		} {
-			this.setByKeys(newState[\editKeys], newState[\settings]);
-			if (newState[\overflow] == 0) { this.clearFields(newState[\editKeys].size) };
+			this.setByKeys(newKeys, newState[\settings]);
+			this.showFields(newKeys.size);
 		};
 
+		if (newSpecs != prevState[\specs]) {
+			this.updateViewSpecs(newSpecs);
+		};
 		prevState = newState;
 	}
-
-//	clearFields { (object.size .. valFields.size).do(this.clearField(_)) }
-
 
 	setByKeys { |newKeys, newSettings|
 
@@ -138,62 +141,44 @@ NdefParamGui : EnvirGui {
 		var newVal, oldVal, oldKey;
 
 		newKeys.do { |newKey, i|
+			var paramView = paramViews[i];
 
 			newVal = newSettings.detect { |pair| pair[0] == newKey };
 			if (newVal.notNil) { newVal = newVal[1] };
 
 			oldKey = prevState[\editKeys][i];
 			if (oldKey.notNil) {
-				oldVal = prevSettings.detect(_[0] == oldKey);
+				oldVal = prevSettings.detect { |pair| pair[0] == oldKey };
 				if (oldVal.notNil) { oldVal = oldVal[1] };
 			};
-			if (oldKey != newKey or: { oldVal != newVal }) {
-			//	"val for % has changed: %\n".postf(key, newval);
-				this.setField(i, newKey, newVal, newKey == oldKey);
+
+			if (oldKey != newKey) {
+				paramView.label_(replaceKeys[newKey] ? newKey);
+				paramView.spec_(this.getSpec(newKey, newVal));
+				paramView.value_(newVal);
+				paramView.action = this.setFunc(newKey);
+			} {
+				if (oldVal != newVal) { paramView.value_(newVal) };
 			};
 		};
+	}
+
+	showFields { |num = 0|
+		paramViews.do { |pv, i|
+			var isInUse = i < num;
+			pv.visible_(isInUse);
+			drags[i].visible_(isInUse);
+		}
 	}
 
 	setFunc { |key|
-		^{ |sl| object.set(key, sl.value) }
-	}
-
-	clearField { |index|
-		var area = valFields[index];
-		try {
-			drags[index].visible_(false);
-			area.children.copy.do { |view| view.remove };
-			area.background_(skin.background);
-			area.refresh;
-			widgets[index] = nil;
-		};
-	}
-
-	setField { |index, key, value, sameKey = false|
-		var area = valFields[index];
-		var widget = widgets[index];
-
-	//	[replaceKeys, key].postcs;
-		if (replaceKeys[key].notNil) {
-			area.background_(skin.hiliteColor);
-		} {
-			area.background_(skin.background);
-		};
-		try { // QT temp fix.
-			if (value.isKindOf(NodeProxy)) {
-				drags[index].object_(value).string_("->" ++ value.key);
+		^{ |sl|
+			// this special key (#) allows to set the source from a slider
+			if(key == '#') {
+				object.source = sl.value
 			} {
-				drags[index].object_(nil).string_("-");
-			};
-					// dodgy - defer should go away eventually.
-					// needed for defer in setToSlider...
-			{ drags[index].visible_(true) }.defer(0.05);
-		};
-		if (value.isKindOf(SimpleNumber) ) {
-			this.setToSlider(index, key, value, sameKey);
-			^this
-		};
-
-		this.setToText(index, key, value, sameKey);
+				object.set(key, sl.value)
+			}
+		}
 	}
 }

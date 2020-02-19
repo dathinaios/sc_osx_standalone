@@ -1,30 +1,26 @@
 + SynthDef {
-
 	asSynthDef { ^this }
-	asDefName {	^name	}
-
+	asDefName  { ^name }
 }
 
 + Object {
-
 	asSynthDef {
-		error("Cannot convert this object to a SynthDef:" + this);
+		error("Cannot convert this object to a SynthDef: " + this);
 		this.dump;
 		^nil
 	}
 	asDefName {
 		^this.asSynthDef.name
 	}
-
 }
 
 
 + String {
-	asDefName { ^this }
+	asDefName { ^this.asSymbol }
 }
 
 + Symbol {
-	asDefName { ^this.asString }
+	asDefName { ^this }
 }
 
 + Function {
@@ -50,7 +46,7 @@
 	}
 
 	asSynthDef { arg rates, prependArgs, outClass=\Out, fadeTime, name;
-		^GraphBuilder.wrapOut(name ?? { this.identityHash.abs.asString },
+		^GraphBuilder.wrapOut(name ?? { this.identityHash.abs.asSymbol },
 			this, rates, prependArgs, outClass, fadeTime
 		);
 	}
@@ -70,10 +66,9 @@
 			// if notifications are enabled on the server,
 			// use the n_end signal to remove the temp synthdef
 		if(server.notified) {
-			OSCpathResponder(server.addr, ['/n_end', synth.nodeID], { |time, resp, msg|
+			OSCFunc({
 				server.sendMsg(\d_free, def.name);
-				resp.remove;
-			}).add;
+			}, '/n_end', server.addr, argTemplate: [synth.nodeID]).oneShot;
 		};
 		synthMsg = synth.newMsg(target, [\i_out, outbus, \out, outbus] ++ args, addAction);
 		def.doSend(server, synthMsg);

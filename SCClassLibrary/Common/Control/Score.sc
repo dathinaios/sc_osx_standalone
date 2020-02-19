@@ -3,6 +3,8 @@ Score {
 	classvar <>program, <>options;
 
 	*initClass {
+		// ensure default values are available in ServerOptions
+		Class.initClassTree(ServerOptions);
 		options = ServerOptions.new;
 	}
 
@@ -98,11 +100,14 @@ Score {
 
 	recordNRT { arg oscFilePath, outputFilePath, inputFilePath, sampleRate = 44100, headerFormat =
 		"AIFF", sampleFormat = "int16", options, completionString="", duration = nil, action = nil;
+		if(oscFilePath.isNil) {
+			oscFilePath = PathName.tmp +/+ "temp_oscscore" ++ UniqueID.next;
+		};
 		this.writeOSCFile(oscFilePath, 0, duration);
 		unixCmd(program + " -N" + oscFilePath.quote
 			+ if(inputFilePath.notNil, { inputFilePath.quote }, { "_" })
 			+ outputFilePath.quote
-		 	+ sampleRate + headerFormat + sampleFormat +
+			+ sampleRate + headerFormat + sampleFormat +
 			(options ? Score.options).asOptionsString
 			+ completionString, action);
 	}
@@ -128,6 +133,9 @@ Score {
 	*write { arg list, oscFilePath, clock;
 		var osccmd, f, tempoFactor;
 		f = File(oscFilePath, "w");
+		if(f.isOpen.not) {
+			Error("Failed to write OSC score file: Could not open % for writing".format(oscFilePath)).throw;
+		};
 		tempoFactor = (clock ? TempoClock.default).tempo.reciprocal;
 		protect {
 			list.size.do { |i|
@@ -149,6 +157,9 @@ Score {
 	saveToFile { arg path;
 		var f;
 		f = File.new(path, "w");
+		if(f.isOpen.not) {
+			Error("Failed to write Score to text: Could not open % for writing".format(path)).throw;
+		};
 		f.putString("[ // SuperCollider Score output " ++ Date.getDate ++ "\n");
 		score.do{ arg me;
 			f.putString((me).asCompileString ++ ",\n");

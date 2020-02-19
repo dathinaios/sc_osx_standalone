@@ -1,14 +1,17 @@
 + Spec {
 	*guess { |key, value|
+
+		if (value.isKindOf(SimpleNumber).not) { ^nil };
+
 		^if (value.abs > 0) {
-			[value/20, value*20, \exp].asSpec
+			ControlSpec(value/20, value*20, \exp, 0, value, \guess);
 		} {
-			[-2, 2, \lin].asSpec
+			ControlSpec(-2, 2, \lin, 0, 0, \guess);
 		};
 	}
 
 	*suggestString { |key, value|
-		^"Spec.add(" + this.guess.storeArgs + ");"
+		^"Spec.add(" + this.guess(key, value).storeArgs + ");"
 	}
 }
 
@@ -74,7 +77,7 @@
 + NodeProxy {
 
 	get { |param|
-		^this.nodeMap.get(param).value ?? { this.getDefaultVal(param) };
+		^this.nodeMap.at(param).value ?? { this.getDefaultVal(param) };
 	}
 
 	getDefaultVal { |key|

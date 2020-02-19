@@ -45,16 +45,9 @@ SkipJack {
 	play { this.start }
 
 	stop {
-		task.stop;
 		all.remove(this);
 		CmdPeriod.remove(this);
-		if( verbose ) { ("SkipJack" + name + "stopped.").postcln };
-	}
-}
-
-Watcher : SkipJack {
-	*new { arg name = "anon", updateFunc, dt=0.2, stopTest = false;
-		"Watcher is only for backward compatibility, use SkipJack!".postln;
-		^super.newCopyArgs(updateFunc, dt, stopTest, name).init.start;
+		if( verbose ) { ("SkipJack" + name + "stopping.").postcln };
+		task.stop;
 	}
 }

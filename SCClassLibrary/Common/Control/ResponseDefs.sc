@@ -245,9 +245,21 @@ OSCFunc : AbstractResponderFunc {
 		^super.new.init(func, path, srcID, recvPort, argTemplate, defaultMatchingDispatcher);
 	}
 
-	*trace {|bool = true|
+	*trace {|bool = true, hideStatusMsg = false|
 		if(bool, {
 			if(traceRunning.not, {
+				traceFunc = if(hideStatusMsg, {
+					{|msg, time, addr, recvPort|
+						if(((msg[0] === '/status.reply' and: {Server.all.any{|it|it.addr == addr}})).not, {
+"OSC Message Received:\n\ttime: %\n\taddress: %\n\trecvPort: %\n\tmsg: %\n\n".postf(time, addr, recvPort, msg);
+						});
+					}
+					}, {
+						{|msg, time, addr, recvPort|
+							"OSC Message Received:\n\ttime: %\n\taddress: %\n\trecvPort: %\n\tmsg: %\n\n".postf(time, addr, recvPort, msg);
+						}
+
+				});
 				thisProcess.addOSCRecvFunc(traceFunc);
 				CmdPeriod.add(this);
 				traceRunning = true;
@@ -381,8 +393,9 @@ OSCArgsMatcher : AbstractMessageMatcher {
 	init {|argArgTemplate, argFunc| argTemplate = argArgTemplate.asArray; func = argFunc; }
 
 	value {|testMsg, time, addr, recvPort|
-		testMsg[1..].do({|item, i|
-			if(argTemplate[i].matchItem(item).not, {^this});
+		var msgArgs = testMsg[1..];
+		argTemplate.do({|item, i|
+			if(item.matchItem(msgArgs[i]).not, {^this});
 		});
 		func.value(testMsg, time, addr, recvPort)
 	}
@@ -456,7 +469,7 @@ MIDIMessageDispatcherNV : MIDIMessageDispatcher {
 // for \sysex
 MIDISysexDispatcher : MIDIMessageDispatcher {
 
-	getKeysForFuncProxy {|funcProxy| ^(funcProxy.srcID ? \all)} // chan
+	getKeysForFuncProxy { |funcProxy| ^(funcProxy.srcID ? \all).asArray }
 
 	value {|srcID, data|
 		active[srcID].value(data, srcID);
@@ -473,24 +486,189 @@ MIDISysexDispatcher : MIDIMessageDispatcher {
 	}
 }
 
+// sysrt with data
+MIDISysDataDispatcher : MIDIMessageDispatcher {
+
+	register {
+		var hook;
+		// select the correct low-level hook.
+		hook = switch(messageType,
+			\sysex, {\sysex},
+			\mtcQF, {\smpte},
+			{\sysrt}
+		);
+		MIDIIn.perform(hook.asSetter, MIDIIn.perform(hook.asGetter).addFunc(this));
+		registered = true;
+	}
+
+	unregister {
+		var hook;
+		// select the correct low-level hook.
+		hook = switch(messageType,
+			\sysex, {\sysex},
+			\mtcQF, {\smpte},
+			{\sysrt}
+		);
+		MIDIIn.perform(hook.asSetter, MIDIIn.perform(hook.asGetter).removeFunc(this));
+		registered = false;
+	}
+
+	getKeysForFuncProxy {|funcProxy| ^(funcProxy.msgNum ? (0..15)).asArray;} // noteNum, etc.
+
+	value {|srcID, index, data|
+		active[index].value(data, srcID, index);
+	}
+
+	wrapFunc {|funcProxy|
+		var func, srcID, argTemplate;
+		func = funcProxy.func;
+		srcID = funcProxy.srcID;
+		argTemplate = funcProxy.argTemplate;
+		if(argTemplate.notNil, { func = MIDIValueMatcher(argTemplate, func)});
+		^case(
+			{ srcID.notNil }, {MIDIFuncSrcSysMessageMatcherND(srcID, func)},
+			{ func }
+		);
+	}
+}
+
+MIDISysDataDropIndDispatcher : MIDISysDataDispatcher {
+
+	value {|srcID, index, data|
+		active[index].value(data, srcID);
+	}
+
+}
+
+MIDISysNoDataDispatcher : MIDISysDataDispatcher {
+
+	value {|srcID, index|
+		active[index].value(srcID);
+	}
+
+	wrapFunc {|funcProxy|
+		var func, srcID;
+		func = funcProxy.func;
+		srcID = funcProxy.srcID;
+		^case(
+			{ srcID.notNil }, {MIDIFuncSrcSysMessageMatcher(srcID, func)},
+			{ func }
+		);
+	}
+}
+
+MIDIMTCtoSMPTEDispatcher : MIDISysexDispatcher {
+
+	value {|srcID, index, data|
+		active[srcID].value(srcID, index, data);
+		active[\all].value(srcID, index, data);
+	}
+
+	wrapFunc {|funcProxy|
+		var func, srcID, argTemplate;
+		func = funcProxy.func;
+		srcID = funcProxy.srcID;
+		argTemplate = funcProxy.argTemplate;
+		if(argTemplate.notNil, { func = MIDIValueMatcher(argTemplate, func)});
+		func = MIDISMPTEAssembler(func);
+		^func;
+	}
+}
+
+// thanks to nescivi for code from MTC class!!
+MIDISMPTEAssembler :  AbstractMessageMatcher {
+	var <mtctime, <mtc_t, <mtc_v, <mtc_r, <dropFrame = false;
+
+	*new{|func|
+		^super.new.init(func);
+	}
+
+	init{|argfunc|
+		/// MTC: only deals with forward running time!
+		func = argfunc;
+		mtc_t = Array.fill(8,0);
+		mtc_v = Array.fill(4,0);
+		mtc_r = 30;
+		mtctime = 0;
+	}
+
+	// assemble MTC quarter frames into a value in seconds
+	value { arg srcID, index, data;
+		var hex;
+		mtc_t[index] = data;
+		if ( index == 7,
+			{
+				mtc_v[0] = mtc_t[1] + mtc_t[0];
+				mtc_v[1] = mtc_t[3] + mtc_t[2];
+				mtc_v[2] = mtc_t[5] + mtc_t[4];
+				mtc_v[3] = mtc_t[7].mod(2) + mtc_t[6];
+				hex = mtc_t[7].asHexString[6];
+				switch (hex,
+					$6, { mtc_r = 30; dropFrame = false},
+					$4, { mtc_r = 30; dropFrame = true},
+					$2, { mtc_r = 25; dropFrame = false},
+					$0, { mtc_r = 24; dropFrame = false}
+				);
+				mtctime = (mtc_v[0]/mtc_r) + mtc_v[1] + (mtc_v[2]*60) + (mtc_v[3]*3600);
+				func.value( mtctime, mtc_r, dropFrame, srcID );
+		});
+	}
+
+}
+
 
 MIDIFunc : AbstractResponderFunc {
-	classvar <>defaultDispatchers, traceFuncs, traceRunning = false;
+	classvar <>defaultDispatchers, traceFuncs, traceRunning = false, sysIndices;
 	var <chan, <msgNum, <msgType, <argTemplate;
 
 	*initClass {
 		defaultDispatchers = IdentityDictionary.new;
 		traceFuncs = IdentityDictionary.new;
+		sysIndices = IdentityDictionary[\mtcQF->1, \songPosition->2, \songSelect->3, \tuneRequest->6, \midiClock->8, \tick->9, \start->10, \continue->11, \stop->12, \activeSense->14, \reset->15];
 		[\noteOn, \noteOff, \control, \polytouch].do({|type|
 			defaultDispatchers[type] = MIDIMessageDispatcher(type);
 			traceFuncs[type] = {|src, chan, num, val|
 				"MIDI Message Received:\n\ttype: %\n\tsrc: %\n\tchan: %\n\tnum: %\n\tval: %\n\n".postf(type, src, chan, num, val);
 			};
 		});
-		[\sysex, \sysrt].do({|type|
+		[\sysex].do({|type|
 			defaultDispatchers[type] = MIDISysexDispatcher(type);
 			traceFuncs[type] = {|src, data|
 				"MIDI Message Received:\n\ttype: %\n\tsrc: %\n\tdata: %\n\n".postf(type, src, data);
+			};
+		});
+		[\mtcQF].do({|type|
+			defaultDispatchers[type] = MIDISysDataDispatcher(type);
+			traceFuncs[type] = {|src, ind, data|
+				"MIDI Message Received:\n\ttype: %\n\tindex: %\n\tsrc: %\n\tdata: %\n\n".postf(type, ind, src, data);
+			};
+		});
+		[\smpte].do({|type|
+			defaultDispatchers[type] = MIDIMTCtoSMPTEDispatcher(type);
+/*			traceFuncs[type] = {|src, ind, data|
+				"MIDI Message Received:\n\ttype: %\n\tsrc: %\n\tdata: %\n\n".postf(type, src, data);
+			};*/ // unneeded? Just trace raw MTC
+		});
+		[\songPosition, \songSelect].do({|type|
+			defaultDispatchers[type] = MIDISysDataDropIndDispatcher(type);
+			traceFuncs[type] = {|src, ind, data|
+				if(ind == sysIndices[type], {
+					"MIDI Message Received:\n\ttype: %\n\tsrc: %\n\tdata: %\n\n".postf(type, src, data);
+				});
+			};
+		});
+		[\sysrt].do({|type|
+			defaultDispatchers[type] = MIDISysDataDispatcher(type);
+			traceFuncs[type] = {|src, ind, data|
+				"MIDI Message Received:\n\ttype: %\n\tindex: %\n\tsrc: %\n\tdata: %\n\n".postf(type, ind, src, data);
+			};// maybe unneeded
+		});
+		[\tuneRequest, \midiClock, \tick, \start, \continue, \stop, \activeSense, \reset].do({|type|
+			defaultDispatchers[type] = MIDISysNoDataDispatcher(type);
+			traceFuncs[type] = {|src, ind|
+				if(ind == sysIndices[type], {
+					"MIDI Message Received:\n\ttype: %\n\tsrc: %\n\n".postf(type, src);
+				});
 			};
 		});
 		[\touch, \program, \bend].do({|type|
@@ -507,12 +685,24 @@ MIDIFunc : AbstractResponderFunc {
 				[\noteOn, \noteOff, \control, \polytouch, \touch, \program, \bend, \sysex].do({|type|
 					MIDIIn.addFuncTo(type, traceFuncs[type]);
 				});
+				[\tuneRequest, \midiClock, \tick, \start, \continue, \stop, \activeSense, \reset, \songPosition, \songSelect].do({|type|
+					MIDIIn.addFuncTo(\sysrt, traceFuncs[type]);
+				});
+				[\mtcQF].do({|type|
+					MIDIIn.addFuncTo(\smpte, traceFuncs[type]);
+				});
 				CmdPeriod.add(this);
 				traceRunning = true;
 			});
 		}, {
 			[\noteOn, \noteOff, \control, \polytouch, \touch, \program, \bend, \sysex].do({|type|
 				MIDIIn.removeFuncFrom(type, traceFuncs[type]);
+			});
+			[\tuneRequest, \midiClock, \tick, \start, \continue, \stop, \activeSense, \reset, \songPosition, \songSelect].do({|type|
+				MIDIIn.removeFuncFrom(\sysrt, traceFuncs[type]);
+			});
+			[\mtcQF].do({|type|
+				MIDIIn.removeFuncFrom(\smpte, traceFuncs[type]);
 			});
 			CmdPeriod.remove(this);
 			traceRunning = false;
@@ -553,17 +743,75 @@ MIDIFunc : AbstractResponderFunc {
 		^this.new(func, nil, chan, \program, srcID, argTemplate, dispatcher);
 	}
 
+	///// system messages
+
 	*sysex { arg func, srcID, argTemplate, dispatcher;
 		^this.new(func, nil, nil, \sysex, srcID, argTemplate, dispatcher);
 	}
 
+	// system common
+
+	// does this need to be registered on the SMPTE hook? Yes!
+	*mtcQuarterFrame {arg func, srcID, argTemplate, dispatcher;
+		^this.new(func, nil, nil, \mtcQF, srcID, argTemplate, dispatcher); // actually index 1 sysrt, but on smpte hook
+	}
+
+	*smpte {arg func, srcID, argTemplate, dispatcher;
+		^this.new(func, nil, nil, \smpte, srcID, argTemplate, dispatcher); // actually index 1 sysrt, but on smpte hook
+	}
+
+	*songPosition {arg func, srcID, argTemplate, dispatcher;
+		^this.new(func, 2, nil, \songPosition, srcID, argTemplate, dispatcher);
+	}
+
+	*songSelect {arg func, srcID, argTemplate, dispatcher;
+		^this.new(func, 3, nil, \songSelect, srcID, argTemplate, dispatcher);
+	}
+
+	*tuneRequest {arg func, srcID, dispatcher;
+		^this.new(func, 6, nil, \tuneRequest, srcID, nil, dispatcher);
+	}
+
+	*midiClock {arg func, srcID, dispatcher;
+		^this.new(func, 8, nil, \midiClock, srcID, nil, dispatcher);
+	}
+
+	// system realtime
+
+	// generic
 	*sysrt { arg func, index, srcID, argTemplate, dispatcher;
 		^this.new(func, index, nil, \sysrt, srcID, argTemplate, dispatcher);
+	}
+
+	*tick {arg func, srcID, dispatcher;
+		^this.new(func, 9, nil, \tick, srcID, nil, dispatcher);
+	}
+
+	*start {arg func, srcID, dispatcher;
+		^this.new(func, 10, nil, \start, srcID, nil, dispatcher);
+	}
+
+	*continue {arg func, srcID, dispatcher;
+		^this.new(func, 11, nil, \continue, srcID, nil, dispatcher);
+	}
+
+	*stop {arg func, srcID, dispatcher;
+		^this.new(func, 12, nil, \stop, srcID, nil, dispatcher);
+	}
+
+	*activeSense {arg func, srcID, dispatcher;
+		^this.new(func, 14, nil, \activeSense, srcID, nil, dispatcher);
+	}
+
+	*reset {arg func, srcID, dispatcher;
+		^this.new(func, 15, nil, \reset, srcID, nil, dispatcher);
 	}
 
 
 	init {|argfunc, argmsgNum, argchan, argType, argsrcID, argtempl, argdisp|
 		msgNum = argmsgNum ? msgNum;
+		msgNum = msgNum.isNumber.if({ msgNum.asInteger }, msgNum);
+		msgNum = msgNum.isCollection.if({ msgNum.collect(_.asInteger) }, msgNum);
 		chan = argchan ? chan;
 		srcID = argsrcID ? srcID;
 		func = argfunc ? func;
@@ -573,6 +821,77 @@ MIDIFunc : AbstractResponderFunc {
 		this.enable;
 		allFuncProxies.add(this);
 	}
+
+	// swap out func and wait
+	learn {|learnVal = false|
+		// check for cc or noteon?
+		var learnFunc;
+		/*this.remove(func);*/
+		learnFunc = this.learnFunc(learnVal);
+		this.disable;
+		this.init(learnFunc); // keep old args if specified, so we can learn from particular channels, srcs, etc.
+	}
+
+	learnFunc {|learnVal|
+		var oldFunc, learnFunc;
+		oldFunc = func; // old funk is ultimately better than new funk
+		if([\control, \noteOn, \noteOff, \polytouch].includes(msgType), {
+			^{|val, num, chan, srcID|
+				"MIDIFunc learned: type: %\tnum: %\tval: %\tchan: %\tsrcID: %\t\n".postf(msgType, num, val, chan, srcID);
+				this.disable;
+				this.remove(learnFunc);
+				oldFunc.value(val, num, chan, srcID);// do first action
+				this.init(oldFunc, num, chan, msgType, srcID, if(learnVal, val, nil));
+			}
+		});
+
+		// noNum
+		if([\touch, \program, \bend].includes(msgType), {
+			^{|val, chan, srcID|
+				"MIDIFunc learned: type: %\tval: %\tchan: %\tsrcID: %\t\n".postf(msgType, val, chan, srcID);
+				this.disable;
+				this.remove(learnFunc);
+				oldFunc.value(val, chan, srcID);// do first action
+				this.init(oldFunc, nil, chan, msgType, srcID, if(learnVal, val, nil));
+			}
+		});
+
+		// sys with Data
+		if([\mtcQF, \smpte, \songPosition, \songSelect, \sysrt].includes(msgType), {
+			^{|val, srcID, index|
+				"MIDIFunc learned: type: %\tnum: %\tval: %\tsrcID: %\t\n".postf(msgType, index, val, srcID);
+				this.disable;
+				this.remove(learnFunc);
+				oldFunc.value(val, srcID, index);// do first action
+				this.init(oldFunc, index, nil, msgType, srcID, if(learnVal, val, nil));
+			}
+		});
+
+		// sys no Data
+		if([\tuneRequest, \midiClock, \tick, \start, \continue, \stop, \activeSense, \reset].includes(msgType), {
+			^{|srcID, index|
+				"MIDIFunc learned: type: %\tnum: %\tsrcID: %\t\n".postf(msgType, index, srcID);
+				this.disable;
+				this.remove(learnFunc);
+				oldFunc.value(srcID, index);// do first action
+				this.init(oldFunc, index, nil, msgType, srcID, nil);
+			}
+		});
+
+		// sysex
+		if(msgType == \sysex, {
+			^{|val, srcID|
+				"MIDIFunc learned: type: %\tdata: %\tsrcID: %\t\n".postf(msgType, val, srcID);
+				this.disable;
+				this.remove(learnFunc);
+				oldFunc.value(val, srcID);// do first action
+				this.init(oldFunc, nil, nil, msgType, srcID, if(learnVal, val, nil));
+			}
+		});
+
+		"msgType: % not standard, cannot learn".format(msgType).warn;
+	}
+
 
 	// post pretty
 	printOn { arg stream; stream << this.class.name << "(" <<* [msgType, msgNum, chan, argTemplate] << ")" }
@@ -630,12 +949,68 @@ MIDIdef : MIDIFunc {
 		^this.new(key, func, nil, chan, \program, srcID, argTemplate, dispatcher);
 	}
 
+	///// system messages
+
 	*sysex { arg key, func, srcID, argTemplate, dispatcher;
 		^this.new(key, func, nil, nil, \sysex, srcID, argTemplate, dispatcher);
 	}
 
+		// system common
+
+	// does this need to be registered on the SMPTE hook? Yes!
+	*mtcQuarterFrame {arg key, func, srcID, argTemplate, dispatcher;
+		^this.new(key, func, nil, nil, \mtcQF, srcID, argTemplate, dispatcher); // actually index 1 sysrt, but on smpte hook
+	}
+
+	*smpte {arg key, func, srcID, argTemplate, dispatcher;
+		^this.new(key, func, nil, nil, \smpte, srcID, argTemplate, dispatcher); // actually index 1 sysrt, but on smpte hook
+	}
+
+	*songPosition {arg key, func, srcID, argTemplate, dispatcher;
+		^this.new(key, func, 2, nil, \songPosition, srcID, argTemplate, dispatcher);
+	}
+
+	*songSelect {arg key, func, srcID, argTemplate, dispatcher;
+		^this.new(key, func, 3, nil, \songSelect, srcID, argTemplate, dispatcher);
+	}
+
+	*tuneRequest {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 6, nil, \tuneRequest, srcID, nil, dispatcher);
+	}
+
+	*midiClock {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 8, nil, \midiClock, srcID, nil, dispatcher);
+	}
+
+	// system realtime
+
+	// generic
 	*sysrt { arg key, func, index, srcID, argTemplate, dispatcher;
 		^this.new(key, func, index, nil, \sysrt, srcID, argTemplate, dispatcher);
+	}
+
+	*tick {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 9, nil, \tick, srcID, nil, dispatcher);
+	}
+
+	*start {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 10, nil, \start, srcID, nil, dispatcher);
+	}
+
+	*continue {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 11, nil, \continue, srcID, nil, dispatcher);
+	}
+
+	*stop {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 12, nil, \stop, srcID, nil, dispatcher);
+	}
+
+	*activeSense {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 14, nil, \activeSense, srcID, nil, dispatcher);
+	}
+
+	*reset {arg key, func, srcID, dispatcher;
+		^this.new(key, func, 15, nil, \reset, srcID, nil, dispatcher);
 	}
 
 	addToAll {|argkey| key = argkey; all.put(key, this) }
@@ -702,6 +1077,21 @@ MIDIFuncSrcMessageMatcherNV : MIDIFuncSrcMessageMatcher {
 
 	value {|num, chan, testSrc|
 		if(srcID == testSrc, {func.value(num, chan, testSrc)})
+	}
+}
+
+// version for message types which don't pass a val
+MIDIFuncSrcSysMessageMatcher : MIDIFuncSrcMessageMatcher {
+
+	value {|testSrc, index, data|
+		if(srcID == testSrc, {func.value(data, testSrc, index)})
+	}
+}
+
+MIDIFuncSrcSysMessageMatcherND : MIDIFuncSrcMessageMatcher {
+
+	value {|testSrc, index|
+		if(srcID == testSrc, {func.value(testSrc, index)})
 	}
 }
 

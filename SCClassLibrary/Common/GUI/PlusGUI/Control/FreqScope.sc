@@ -1,38 +1,27 @@
-PlusFreqScope {
-	classvar <server;
+FreqScopeView {
 
 	var <scope;
 	var <scopebuf;
+	var <server;
 	var <active, <synth, <inBus, <dbRange, dbFactor, rate, <freqMode;
 	var <bufSize;	// size of FFT
 	var <>specialSynthDef, <specialSynthArgs; // Allows to override the analysis synth
 
 	*initClass {
 		StartUp.add {
-			server = GUI.current.stethoscope.defaultServer;
-
 			this.initSynthDefs;
 		}
 	}
 
-	*server_ {|aServer|
-		if(GUI.current.stethoscope.isValidServer(aServer).not) {
-			Error("PlusFreqScope: can not use server '%' with current GUI scheme (%)"
-				.format(aServer.name, GUI.current.id)).throw;
-		};
-
-		server = aServer;
-	}
-
-	*new { arg parent, bounds;
-		^super.new.initFreqScope (parent, bounds)
+	*new { arg parent, bounds, server;
+		^super.new.initFreqScope (parent, bounds, server)
 	}
 
 	*initSynthDefs {
 		// dbFactor -> 2/dbRange
 
 		// linear
-		SynthDef("freqScope0", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
+		SynthDef("system_freqScope0", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, numSamples, mul, add;
 			var fftbufnum = LocalBuf(fftBufSize, 1);
@@ -46,7 +35,7 @@ PlusFreqScope {
 			phasor = phasor.round(2); // the evens are magnitude
 			ScopeOut.ar( ((BufRd.ar(1, fftbufnum, phasor, 1, 1) * mul).ampdb * dbFactor) + 1, scopebufnum);
 		}, [\kr, \ir, \ir, \ir, \kr]).add;
-		SynthDef("freqScope0_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
+		SynthDef("system_freqScope0_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, numSamples, mul, add;
 			var fftbufnum = LocalBuf(fftBufSize, 1);
@@ -62,7 +51,7 @@ PlusFreqScope {
 		}, [\kr, \ir, \ir, \ir, \kr]).add;
 
 		// logarithmic
-		SynthDef("freqScope1", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
+		SynthDef("system_freqScope1", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, halfSamples, mul, add;
 			var fftbufnum = LocalBuf(fftBufSize, 1);
@@ -76,7 +65,7 @@ PlusFreqScope {
 			ScopeOut.ar( ((BufRd.ar(1, fftbufnum, phasor, 1, 1) * mul).ampdb * dbFactor) + 1, scopebufnum);
 		}, [\kr, \ir, \ir, \ir, \kr]).add;
 
-		SynthDef("freqScope1_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
+		SynthDef("system_freqScope1_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, halfSamples, mul, add;
 			var fftbufnum = LocalBuf(fftBufSize, 1);
@@ -92,7 +81,7 @@ PlusFreqScope {
 
 		// These next two are based on the original two, but adapted by Dan Stowell
 		// to calculate the frequency response between two channels
-		SynthDef("freqScope0_magresponse", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
+		SynthDef("system_freqScope0_magresponse", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, numSamples, mul, add;
 			var signal2, chain2, divisionbuf;
@@ -113,7 +102,7 @@ PlusFreqScope {
 			ScopeOut.ar( ((BufRd.ar(1, divisionbuf, phasor, 1, 1) * mul).ampdb * dbFactor) + 1, scopebufnum);
 		}, [\kr, \ir, \ir, \ir, \kr, \ir]).add;
 
-		SynthDef("freqScope0_magresponse_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
+		SynthDef("system_freqScope0_magresponse_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, numSamples, mul, add;
 			var signal2, chain2, divisionbuf;
@@ -134,7 +123,7 @@ PlusFreqScope {
 			ScopeOut2.ar( ((BufRd.ar(1, divisionbuf, phasor, 1, 1) * mul).ampdb * dbFactor) + 1, scopebufnum, fftBufSize/rate);
 		}, [\kr, \ir, \ir, \ir, \kr, \ir]).add;
 
-		SynthDef("freqScope1_magresponse", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
+		SynthDef("system_freqScope1_magresponse", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, halfSamples, mul, add;
 			var signal2, chain2, divisionbuf;
@@ -154,7 +143,7 @@ PlusFreqScope {
 			ScopeOut.ar( ((BufRd.ar(1, divisionbuf, phasor, 1, 1) * mul).ampdb * dbFactor) + 1, scopebufnum);
 		}, [\kr, \ir, \ir, \ir, \kr, \ir]).add;
 
-		SynthDef("freqScope1_magresponse_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
+		SynthDef("system_freqScope1_magresponse_shm", { arg in=0, fftBufSize = 2048, scopebufnum=1, rate=4, dbFactor = 0.02, in2=1;
 			var phase = 1 - (rate * fftBufSize.reciprocal);
 			var signal, chain, result, phasor, halfSamples, mul, add;
 			var signal2, chain2, divisionbuf;
@@ -175,12 +164,14 @@ PlusFreqScope {
 		}, [\kr, \ir, \ir, \ir, \kr, \ir]).add;
 	}
 
-	initFreqScope { arg parent, bounds;
+	initFreqScope { arg parent, bounds, argServer;
+		server = argServer ? Server.default;
 		if (this.shmScopeAvailable) {
-			scope = \QScope2.asClass.new(parent, bounds);
+			scope = ScopeView.new(parent, bounds);
 			scope.server = server;
+			scope.fill = false;
 		} {
-			scope = ScopeView(parent, bounds);
+			scope = SCScope(parent, bounds);
 		};
 
 		active = false;
@@ -191,21 +182,19 @@ PlusFreqScope {
 		freqMode = 0;
 		bufSize = 2048;
 		ServerQuit.add(this, server);
-        ^this;
+		^this;
 	}
 
-	allocBuffersAndStart {
+	allocBuffers {
 		if (this.shmScopeAvailable) {
 			scopebuf = ScopeBuffer.alloc(server);
 			scope.bufnum = scopebuf.bufnum;
-			this.start;
 		} {
 			Buffer.alloc(server, bufSize/4, 1, { |sbuf|
 				scope.bufnum = sbuf.bufnum;
 				scopebuf = sbuf;
-				this.start;
 			});
-		}
+		};
 	}
 
 	freeBuffers {
@@ -215,11 +204,18 @@ PlusFreqScope {
 	}
 
 	start {
-		var defname = specialSynthDef ?? {"freqScope" ++ freqMode.asString ++ if (this.shmScopeAvailable) {"_shm"} {""}};
-		var args = [\in, inBus, \dbFactor, dbFactor, \rate, 4, \fftBufSize, bufSize,
+		var defname, args;
+
+		if (synth.notNil) { synth.free };
+		if (scopebuf.isNil) { this.allocBuffers };
+
+		defname = specialSynthDef ?? {
+			"system_freqScope" ++ freqMode.asString ++ if (this.shmScopeAvailable) {"_shm"} {""}
+		};
+		args = [\in, inBus, \dbFactor, dbFactor, \rate, 4, \fftBufSize, bufSize,
 			\scopebufnum, scopebuf.bufnum] ++ specialSynthArgs;
 		synth = Synth.tail(RootNode(server), defname, args);
-		if (scope.class.name === \QScope2) { scope.start };
+		if (scope.isKindOf(ScopeView)) { scope.start };
 	}
 
 	kill {
@@ -228,37 +224,36 @@ PlusFreqScope {
 		ServerQuit.remove(this, server);
 	}
 
-	active_ { arg activate;
-		if (activate) {
+	active_ { |bool|
+		if (bool) {
 			ServerTree.add(this, server);
 			if (server.serverRunning) {
-				active=activate;
+				active = bool;
 				this.doOnServerTree;
 				^this
 			}
 		} {
 			ServerTree.remove(this, server);
 			if (server.serverRunning and: active) {
-				if (scope.class.name === \QScope2) { scope.stop };
+				if (scope.isKindOf(ScopeView)) { scope.stop };
 				synth.free;
+				synth = nil;
 			};
 		};
-		active=activate;
+		active = bool;
 		^this
 	}
 
 	doOnServerTree {
-		if (active) {
-			if (scopebuf.isNil) {
-				this.allocBuffersAndStart;
-			} {
-				this.start;
-			}
-		}
+		synth = nil;
+		if (active) { this.start; }
 	}
 
 	doOnServerQuit {
-		scope.stop;
+		var thisScope = scope;
+		defer {
+			thisScope.stop;
+		};
 		scopebuf = synth = nil;
 	}
 
@@ -281,7 +276,6 @@ PlusFreqScope {
 	freqMode_ { arg mode;
 		freqMode = mode.asInteger.clip(0,1);
 		if(active, {
-			synth.free;
 			this.start;
 		});
 	}
@@ -293,18 +287,17 @@ PlusFreqScope {
 		}
 	}
 
-	special { |defname, extraargs|
+	special { |defname, extraArgs|
 		this.specialSynthDef_(defname);
-		this.specialSynthArgs_(extraargs);
+		this.specialSynthArgs_(extraArgs);
 		if(active, {
-			synth.free;
 			this.start;
 		});
 	}
 
-	*response{ |parent, bounds, bus1, bus2, freqMode=1|
-		var scope = this.new(parent, bounds).inBus_(bus1.index);
-		var synthDefName = "freqScope%_magresponse%".format(freqMode, if (scope.shmScopeAvailable) {"_shm"} {""});
+	*response { |parent, bounds, bus1, bus2, freqMode = 1|
+		var scope = this.new(parent, bounds, bus1.server).inBus_(bus1.index);
+		var synthDefName = "system_freqScope%_magresponse%".format(freqMode, if (scope.shmScopeAvailable) {"_shm"} {""});
 
 		^scope.special(synthDefName, [\in2, bus2])
 	}
@@ -314,27 +307,29 @@ PlusFreqScope {
 	}
 
 	shmScopeAvailable {
-		if (GUI.id != \qt) { ^false };
-		^(server.isLocal and: (server.inProcess.not))
+		^server.isLocal
+		// and: { server.inProcess.not }
 	}
 }
 
-PlusFreqScopeWindow {
+FreqScope {
 	classvar <scopeOpen;
 
 	var <scope, <window;
 
-	*new { arg width=522, height=300, busNum=0, scopeColor, bgColor;
+	*new { arg width=522, height=300, busNum=0, scopeColor, bgColor, server;
 		var rect, scope, window, pad, font, freqLabel, freqLabelDist, dbLabel, dbLabelDist;
 		var setFreqLabelVals, setDBLabelVals;
 		var nyquistKHz;
+		busNum = busNum.asControlInput;
 		if(scopeOpen != true, { // block the stacking up of scope windows
 			//make scope
 
+			scopeColor = scopeColor ?? { Color.new255(255, 218, 000) };
+
 			scopeOpen = true;
 
-			if(scopeColor.isNil, { scopeColor = Color.green });
-			if(bgColor.isNil, { bgColor = Color.green(0.1) });
+			server = server ? Server.default;
 
 			rect = Rect(0, 0, width, height);
 			pad = [30, 48, 14, 10]; // l,r,t,b
@@ -344,7 +339,7 @@ PlusFreqScopeWindow {
 			dbLabel = Array.newClear(17);
 			dbLabelDist = rect.height/(dbLabel.size-1);
 
-			nyquistKHz = PlusFreqScope.server.sampleRate;
+			nyquistKHz = server.sampleRate;
 			if( (nyquistKHz == 0) || nyquistKHz.isNil, {
 				nyquistKHz = 22.05 // best guess?
 			},{
@@ -387,7 +382,6 @@ PlusFreqScopeWindow {
 				;
 				StaticText(window, Rect(pad[0] + (i*freqLabelDist), pad[2], 1, rect.height))
 					.string_("")
-					.background_(scopeColor.alpha_(0.25))
 				;
 			});
 
@@ -398,18 +392,17 @@ PlusFreqScopeWindow {
 				;
 				StaticText(window, Rect(pad[0], dbLabel[i].bounds.top, rect.width, 1))
 					.string_("")
-					.background_(scopeColor.alpha_(0.25))
 				;
 			});
 
-			scope = PlusFreqScope(window, rect.moveBy(pad[0], pad[2]));
+			scope = FreqScopeView(window, rect.moveBy(pad[0], pad[2]), server);
 			scope.xZoom_((scope.bufSize*0.25) / width);
 
 			setFreqLabelVals.value(scope.freqMode, 2048);
 			setDBLabelVals.value(scope.dbRange);
 
 			Button(window, Rect(pad[0] + rect.width, pad[2], pad[1], 16))
-				.states_([["Power", Color.white, Color.green(0.5)], ["Power", Color.white, Color.red(0.5)]])
+				.states_([["stop", Color.white, Color.green(0.5)], ["start", Color.white, Color.red(0.5)]])
 				.action_({ arg view;
 					if(view.value == 0, {
 						scope.active_(true);
@@ -428,7 +421,7 @@ PlusFreqScopeWindow {
 
 			NumberBox(window, Rect(pad[0] + rect.width, pad[2]+30, pad[1], 14))
 				.action_({ arg view;
-					view.value_(view.value.asInteger.clip(0, Server.internal.options.numAudioBusChannels));
+					view.value_(view.value.asInteger.clip(0, server.options.numAudioBusChannels));
 					scope.inBus_(view.value);
 				})
 				.value_(busNum)
@@ -468,11 +461,14 @@ PlusFreqScopeWindow {
 			scope
 				.inBus_(busNum)
 				.active_(true)
-				.background_(bgColor)
 				.style_(1)
 				.waveColors_([scopeColor.alpha_(1)])
 				.canFocus_(false)
 			;
+
+			if (bgColor.notNil) {
+				scope.background_(bgColor)
+			};
 
 			window.onClose_({
 				scope.kill;
@@ -480,12 +476,5 @@ PlusFreqScopeWindow {
 			}).front;
 			^super.newCopyArgs(scope, window)
 		});
-	}
-
-	*server {
-		^PlusFreqScope.server
-	}
-	*server_ {|aServer|
-		^PlusFreqScope.server_(aServer)
 	}
 }

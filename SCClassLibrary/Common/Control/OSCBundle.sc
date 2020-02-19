@@ -1,9 +1,12 @@
 OSCBundle {
 	var <messages, <preparationMessages;
+	var removeOnCancel;
+
 
 	add { arg msg; messages = messages.add(msg) }
 	addAll { arg mgs; messages = messages.addAll(mgs) }
 	addPrepare { arg msg; preparationMessages = preparationMessages.add(msg) }
+	addCancel { arg msg; messages = messages.add(msg); removeOnCancel = removeOnCancel.add(msg) }
 
 	// the sound starts at: (next beat + latency) when the preparation is finished
 	// the client side task starts at: preparationTime + next beat
@@ -43,11 +46,17 @@ OSCBundle {
 		};
 	}
 
+	cancel {
+		if(removeOnCancel.notNil) {
+			messages.removeAll(removeOnCancel);
+		}
+	}
 
 	// private //
 
 	prSend { arg server, delta,timeOfRequest;
 		if(messages.notNil, {
+			if(removeOnCancel.notNil) { messages = messages.collect { |x| x.value } };
 			server.listSendBundle(delta ?? { server.latency }, messages);
 		})
 	}
@@ -86,6 +95,7 @@ MixedBundle : OSCBundle {
 		sendFunctions.do({ arg item; item.value });
 	}
 
+
 	// private //
 
 	prSend { arg server, delta, timeOfRequest;
@@ -106,6 +116,7 @@ MixedBundle : OSCBundle {
 			});
 		};
 		if(messages.notNil) {
+			if(removeOnCancel.notNil) { messages = messages.collect { |x| x.value } };
 			server.listSendBundle(delta, messages);
 		};
 		this.doSendFunctions;

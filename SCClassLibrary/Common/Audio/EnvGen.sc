@@ -1,4 +1,22 @@
 Done : UGen {
+	// aliases for UGen doneActions
+	const <none = 0;
+	const <pauseSelf = 1;
+	const <freeSelf = 2;
+	const <freeSelfAndPrev = 3;
+	const <freeSelfAndNext = 4;
+	const <freeSelfAndFreeAllInPrev = 5;
+	const <freeSelfAndFreeAllInNext = 6;
+	const <freeSelfToHead = 7;
+	const <freeSelfToTail = 8;
+	const <freeSelfPausePrev = 9;
+	const <freeSelfPauseNext = 10;
+	const <freeSelfAndDeepFreePrev = 11;
+	const <freeSelfAndDeepFreeNext = 12;
+	const <freeAllInGroup = 13;
+	const <freeGroup = 14;
+	const <freeSelfResumeNext = 15;
+
 	*kr { arg src;
 		^this.multiNew('control', src)
 	}
@@ -52,17 +70,24 @@ EnvGen : UGen { // envelope generator
 		^this.multiNewList(['control', gate, levelScale, levelBias, timeScale, doneAction, envelope])
 	}
 	*convertEnv { arg env;
-		if(env.isSequenceableCollection) { ^env.reference }; // raw envelope data
+		if(env.isSequenceableCollection) {
+			if (env.shape.size == 1) {
+				^env.reference
+			} {
+				// multi-channel envelope
+				^env.collect(_.reference)
+			};
+		};
 		^env.asMultichannelArray.collect(_.reference).unbubble
 	}
 	*new1 { arg rate, gate, levelScale, levelBias, timeScale, doneAction, envArray;
 		^super.new.rate_(rate).addToSynth.init([gate, levelScale, levelBias, timeScale, doneAction]
 			++ envArray.dereference);
 	}
- 	init { arg theInputs;
- 		// store the inputs as an array
- 		inputs = theInputs;
- 	}
+	init { arg theInputs;
+		// store the inputs as an array
+		inputs = theInputs;
+	}
 	argNamesInputsOffset { ^2 }
 }
 

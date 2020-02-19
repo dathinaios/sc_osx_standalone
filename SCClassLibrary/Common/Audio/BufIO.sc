@@ -21,10 +21,6 @@ PlayBuf : MultiOutUGen {
 TGrains : MultiOutUGen {
 	*ar { arg numChannels, trigger=0, bufnum=0, rate=1, centerPos=0,
 			dur=0.1, pan=0, amp=0.1, interp=4;
-		if (numChannels < 2) {
-			 "TGrains needs at least two channels.".error;
-			 ^nil
-		}
 		^this.multiNew('audio', numChannels, trigger, bufnum, rate, centerPos,
 				dur, pan, amp, interp)
 	}
@@ -65,11 +61,11 @@ BufRd : MultiOutUGen {
 	}
 	argNamesInputsOffset { ^2 }
 	checkInputs {
- 		if (rate == 'audio' and: {inputs.at(1).rate != 'audio'}, {
- 			^("phase input is not audio rate: " + inputs.at(1) + inputs.at(1).rate);
- 		});
- 		^this.checkValidInputs
- 	}
+		if (rate == 'audio' and: {inputs.at(1).rate != 'audio'}, {
+			^("phase input is not audio rate: " + inputs.at(1) + inputs.at(1).rate);
+		});
+		^this.checkValidInputs
+	}
 }
 
 BufWr : UGen {
@@ -83,11 +79,17 @@ BufWr : UGen {
 			loop] ++ inputArray.asArray)
 	}
 	checkInputs {
- 		if (rate == 'audio' and: {inputs.at(1).rate != 'audio'}, {
- 			^("phase input is not audio rate: " + inputs.at(1) + inputs.at(1).rate);
- 		});
- 		^this.checkValidInputs
- 	}
+		if (rate == 'audio') {
+			if(inputs.at(1).rate != 'audio') {
+				^"phase input is not audio rate: % %".format(inputs.at(1), inputs.at(1).rate)
+			} {
+				if(inputs[3..].any { |x| x.rate != 'audio' }) {
+					^"inputArray input is not audio rate: % %".format(inputs[3..], inputs[3..].collect(_.rate))
+				}
+			}
+		};
+		^this.checkValidInputs
+	}
 }
 
 

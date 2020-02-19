@@ -7,16 +7,18 @@ Plot {
 	var <font, <fontColor, <gridColorX, <gridColorY, <>plotColor, <>backgroundColor;
 	var <gridOnX = true, <gridOnY = true, <>labelX, <>labelY;
 
-	var valueCache,pen;
+	var valueCache;
 
 	*initClass {
+		if(Platform.hasQt.not) { ^nil; };	// skip init on Qt-less builds
+
 		StartUp.add {
 			GUI.skin.put(\plot, (
-				gridColorX: Color.grey(0.7),
-				gridColorY: Color.grey(0.7),
-				fontColor: Color.grey(0.3),
-				plotColor: [Color.black, Color.blue, Color.red, Color.green(0.7)],
-				background: Color.new255(235, 235, 235),
+				gridColorX: QtGUI.palette.highlight,
+				gridColorY: QtGUI.palette.highlight,
+				fontColor: QtGUI.palette.windowText,
+				plotColor: [QtGUI.palette.windowText, Color.blue.valueBlend(QtGUI.palette.windowText), Color.red.valueBlend(QtGUI.palette.windowText), Color.green(0.7).valueBlend(QtGUI.palette.windowText)],
+				background: QtGUI.palette.base,
 				gridLinePattern: nil,
 				gridLineSmoothing: false,
 				labelX: "",
@@ -35,18 +37,12 @@ Plot {
 		var fontName;
 		var gui = plotter.gui;
 		var skin = GUI.skin.at(\plot);
-		pen = gui.pen;
 
 		drawGrid = DrawGrid(bounds ? Rect(0,0,1,1),nil,nil);
 		drawGrid.x.labelOffset = Point(0,4);
 		drawGrid.y.labelOffset = Point(-10,0);
 		skin.use {
-			font = ~gridFont ?? { gui.font.default };
-			if(font.class != gui.font) {
-				fontName = font.name;
-				if( gui.font.availableFonts.detect(_ == fontName).isNil, { fontName = gui.font.defaultSansFace });
-				font = gui.font.new(fontName, font.size)
-			};
+			font = ~gridFont ?? { Font.default };
 			this.gridColorX = ~gridColorX;
 			this.gridColorY = ~gridColorY;
 			plotColor = ~plotColor;
@@ -127,48 +123,53 @@ Plot {
 	}
 
 	drawBackground {
-		pen.addRect(bounds);
-		pen.fillColor = backgroundColor;
-		pen.fill;
+		Pen.addRect(bounds);
+		Pen.fillColor = backgroundColor;
+		Pen.fill;
 	}
 
 	drawLabels {
 		var sbounds;
 		if(gridOnX and: { labelX.notNil }) {
 			sbounds = try { labelX.bounds(font) } ? 0;
-			pen.font = font;
-			pen.strokeColor = fontColor;
-			pen.stringAtPoint(labelX,
+			Pen.font = font;
+			Pen.strokeColor = fontColor;
+			Pen.stringAtPoint(labelX,
 				plotBounds.right - sbounds.width @ plotBounds.bottom
 			)
 		};
 		if(gridOnY and: { labelY.notNil }) {
 			sbounds = try { labelY.bounds(font) } ? 0;
-			pen.font = font;
-			pen.strokeColor = fontColor;
-			pen.stringAtPoint(labelY,
+			Pen.font = font;
+			Pen.strokeColor = fontColor;
+			Pen.stringAtPoint(labelY,
 				plotBounds.left - sbounds.width - 3 @ plotBounds.top
 			)
 		};
 	}
 
 	domainCoordinates { |size|
-		var val = this.resampledDomainSpec.unmap(plotter.domain ?? { (0..size-1) });
-		^plotBounds.left + (val * plotBounds.width);
+		var range, step, vals, resamps;
+
+		vals = if (plotter.domain.notNil) {
+			domainSpec.unmap(plotter.domain);
+		} {
+			range = domainSpec.range;
+			if (range == 0.0 or: { size == 1 }) {
+				0.5.dup(size) // put the values in the middle of the plot
+			} {
+				domainSpec.unmap(
+					Array.interpolation(size, domainSpec.minval, domainSpec.maxval)
+				);
+			}
+		};
+
+		^plotBounds.left + (vals * plotBounds.width);
 	}
 
 	dataCoordinates {
-		 var val = spec.unmap(this.prResampValues);
-		 ^plotBounds.bottom - (val * plotBounds.height); // measures from top left (may be arrays)
-	}
-
-	resampledSize {
-		^min(value.size, plotBounds.width / plotter.resolution)
-	}
-
-	resampledDomainSpec {
-		var offset = if(this.hasSteplikeDisplay) { 0 } { 1 };
-		^domainSpec.copy.maxval_(this.resampledSize - offset)
+		var val = spec.warp.unmap(this.prResampValues);
+		^plotBounds.bottom - (val * plotBounds.height); // measures from top left (may be arrays)
 	}
 
 	drawData {
@@ -176,69 +177,100 @@ Plot {
 		var ycoord = this.dataCoordinates;
 		var xcoord = this.domainCoordinates(ycoord.size);
 
-		pen.width = 1.0;
-		pen.joinStyle = 1;
-		plotColor = plotColor.as(Array);
+		Pen.use {
+			Pen.width = 1.0;
+			Pen.joinStyle = 1;
+			plotColor = plotColor.as(Array);
 
-		if(ycoord.at(0).isSequenceableCollection) { // multi channel expansion
-			ycoord.flop.do { |y, i|
-				pen.beginPath;
-				this.perform(mode, xcoord, y);
-				pen.strokeColor = plotColor.wrapAt(i);
-				pen.stroke;
-			}
-		} {
-			pen.beginPath;
-			pen.strokeColor = plotColor.at(0);
-			this.perform(mode, xcoord, ycoord);
-			pen.stroke;
+			Pen.addRect(plotBounds);
+			Pen.clip; // clip curve to bounds.
+
+			if(ycoord.at(0).isSequenceableCollection) { // multi channel expansion
+				ycoord.flop.do { |y, i|
+					Pen.beginPath;
+					this.perform(mode, xcoord, y);
+					if (this.needsPenFill(mode)) {
+						Pen.fillColor = plotColor.wrapAt(i);
+						Pen.fill
+					} {
+						Pen.strokeColor = plotColor.wrapAt(i);
+						Pen.stroke
+					}
+				}
+			} {
+				Pen.beginPath;
+				Pen.strokeColor = plotColor.at(0);
+				Pen.fillColor= plotColor.at(0);
+				this.perform(mode, xcoord, ycoord);
+				if (this.needsPenFill(mode)) {
+					Pen.fill
+				} {
+					Pen.stroke
+				}
+			};
+			Pen.joinStyle = 0;
 		};
-		pen.joinStyle = 0;
 
 	}
 
 	// modes
 
 	linear { |x, y|
-		pen.moveTo(x.first @ y.first);
+		Pen.moveTo(x.first @ y.first);
 		y.size.do { |i|
-			pen.lineTo(x[i] @ y[i]);
+			Pen.lineTo(x[i] @ y[i]);
 		}
 	}
 
 	points { |x, y|
 		var size = min(bounds.width / value.size * 0.25, 4);
 		y.size.do { |i|
-			pen.addArc(x[i] @ y[i], 0.5, 0, 2pi);
-			if(size > 2) { pen.addArc(x[i] @ y[i], size, 0, 2pi); };
+			Pen.addArc(x[i] @ y[i], 0.5, 0, 2pi);
+			if(size > 2) { Pen.addArc(x[i] @ y[i], size, 0, 2pi); };
 		}
 	}
 
 	plines { |x, y|
 		var size = min(bounds.width / value.size * 0.25, 3);
-		pen.moveTo(x.first @ y.first);
+		Pen.moveTo(x.first @ y.first);
 		y.size.do { |i|
 			var p = x[i] @ y[i];
-			pen.lineTo(p);
-			pen.addArc(p, size, 0, 2pi);
-			pen.moveTo(p);
+			Pen.lineTo(p);
+			Pen.addArc(p, size, 0, 2pi);
+			Pen.moveTo(p);
 		}
 	}
 
 	levels { |x, y|
-		pen.smoothing_(false);
+		Pen.smoothing_(false);
 		y.size.do { |i|
-			pen.moveTo(x[i] @ y[i]);
-			pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
+			Pen.moveTo(x[i] @ y[i]);
+			Pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
 		}
 	}
 
 	steps { |x, y|
-		pen.smoothing_(false);
-		pen.moveTo(x.first @ y.first);
+		Pen.smoothing_(false);
+		Pen.moveTo(x.first @ y.first);
 		y.size.do { |i|
-			pen.lineTo(x[i] @ y[i]);
-			pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
+			Pen.lineTo(x[i] @ y[i]);
+			Pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
+		}
+	}
+
+	bars { |x, y |
+		Pen.smoothing_(false);
+		y.size.do { |i|
+			var p = x[i] @ y[i];
+			var nextx = x[i + 1] ?? {plotBounds.right};
+			var centery = 0.linlin(this.spec.minval, this.spec.maxval, plotBounds.bottom, plotBounds.top, clip:nil);
+			var rely = y[i] - centery;
+			var gap = (nextx - x[i]) * 0.1;
+			if (rely < 0) {
+				Pen.addRect(Rect(x[i] + gap, centery + rely, nextx- x[i] - (2 * gap), rely.abs))
+			} {
+				Pen.addRect(Rect(x[i] + gap, centery, nextx - x[i] - ( 2 * gap), rely))
+			}
 		}
 	}
 
@@ -328,12 +360,37 @@ Plot {
 	}
 
 	hasSteplikeDisplay {
-		^#[\levels, \steps].includes(plotter.plotMode)
+		^#[\levels, \steps, \bars].includes(plotter.plotMode)
+	}
+
+	needsPenFill {
+		^#[\bars].includes(plotter.plotMode)
 	}
 
 	getIndex { |x|
-		var offset = if(this.hasSteplikeDisplay) { 0.5 } { 0.0 }; // needs to be fixed.
-		^(this.getRelativePositionX(x) - offset).round.asInteger
+		var ycoord = this.dataCoordinates;
+		var xcoord = this.domainCoordinates(ycoord.size);
+		var binwidth = 0;
+		var offset;
+
+		if (plotter.domain.notNil) {
+			if (this.hasSteplikeDisplay) {
+				// round down to index
+				^plotter.domain.indexInBetween(this.getRelativePositionX(x)).floor.asInteger
+			} {
+				// round to nearest index
+				^plotter.domain.indexIn(this.getRelativePositionX(x))
+			};
+		} {
+			if (xcoord.size > 0) {
+				binwidth = (xcoord[1] ?? {plotBounds.right}) - xcoord[0]
+			};
+			offset = if(this.hasSteplikeDisplay) { binwidth * 0.5 } { 0.0 };
+
+			^(  // domain unspecified, values are evenly distributed between either side of the plot
+				((x - offset - plotBounds.left) / plotBounds.width) * (value.size - 1)
+			).round.clip(0, value.size-1).asInteger
+		}
 	}
 
 	getDataPoint { |x|
@@ -366,8 +423,8 @@ Plot {
 Plotter {
 
 	var <>name, <>bounds, <>parent;
-	var <value, <data, <>domain;
-	var <plots, <specs, <domainSpecs;
+	var <value, <data, <domain;
+	var <plots, <specs, <domainSpecs, <plotColors;
 	var <cursorPos, <>plotMode = \linear, <>editMode = false, <>normalized = false;
 	var <>resolution = 1, <>findSpecs = true, <superpose = false;
 	var modes, <interactionView;
@@ -384,17 +441,10 @@ Plotter {
 		var btnBounds;
 		parent = argParent ? parent;
 		bounds = argBounds ? bounds;
-		gui = GUI.current;
 		if(parent.isNil) {
-			parent = gui.window.new(name ? "Plot", bounds ? Rect(100, 200, 400, 300));
-			if(GUI.skin.at(\plot).at(\expertMode).not) {
-				btnBounds = this.makeButtons;
-				bounds = parent.view.bounds.insetAll(8,8,btnBounds.width + 4,8);
-			}{
-				bounds = parent.view.bounds.insetBy(8);
-			};
-
-			interactionView = gui.userView.new(parent, bounds);
+			parent = Window.new(name ? "Plot", bounds ? Rect(100, 200, 400, 300));
+			bounds = parent.view.bounds.insetBy(8);
+			interactionView = UserView.new(parent, bounds);
 
 			interactionView.drawFunc = { this.draw };
 			parent.front;
@@ -402,165 +452,191 @@ Plotter {
 
 		} {
 			bounds = bounds ?? { parent.bounds.moveTo(0, 0) };
-			interactionView = gui.userView.new(parent, bounds);
+			interactionView = UserView.new(parent, bounds);
 			interactionView.drawFunc = { this.draw };
 		};
-		modes = [\points, \levels, \linear, \plines, \steps].iter.loop;
+		modes = [\points, \levels, \linear, \plines, \steps, \bars].iter.loop;
 
 		interactionView
-			.background_(Color.clear)
-			.focusColor_(Color.clear)
-			.resize_(5)
-			.focus(true)
-			.mouseDownAction_({ |v, x, y, modifiers|
-				cursorPos = x @ y;
-				if(superpose.not) {
-					editPlotIndex = this.pointIsInWhichPlot(cursorPos);
-					editPlotIndex !? {
-						editPos = x @ y; // new Point instead of cursorPos!
-						if(editMode) {
-							plots.at(editPlotIndex).editData(x, y, editPlotIndex);
-							if(this.numFrames < 200) { this.refresh };
-						};
-					}
-				};
-				if(modifiers.isAlt) { this.postCurrentValue(x, y) };
-			})
-			.mouseMoveAction_({ |v, x, y, modifiers|
-				cursorPos = x @ y;
-				if(superpose.not && editPlotIndex.notNil) {
+		.background_(Color.clear)
+		.focusColor_(Color.clear)
+		.resize_(5)
+		.focus(true)
+		.mouseDownAction_({ |v, x, y, modifiers|
+			cursorPos = x @ y;
+			if(superpose.not) {
+				editPlotIndex = this.pointIsInWhichPlot(cursorPos);
+				editPlotIndex !? {
+					editPos = x @ y; // new Point instead of cursorPos!
 					if(editMode) {
-						plots.at(editPlotIndex).editDataLine(editPos, cursorPos, editPlotIndex);
+						plots.at(editPlotIndex).editData(x, y, editPlotIndex);
 						if(this.numFrames < 200) { this.refresh };
 					};
-					editPos = x @ y;  // new Point instead of cursorPos!
-
+				}
+			};
+			if(modifiers.isAlt) { this.postCurrentValue(x, y) };
+		})
+		.mouseMoveAction_({ |v, x, y, modifiers|
+			cursorPos = x @ y;
+			if(superpose.not && editPlotIndex.notNil) {
+				if(editMode) {
+					plots.at(editPlotIndex).editDataLine(editPos, cursorPos, editPlotIndex);
+					if(this.numFrames < 200) { this.refresh };
 				};
-				if(modifiers.isAlt) { this.postCurrentValue(x, y) };
-			})
-			.mouseUpAction_({
-				cursorPos = nil;
-				editPlotIndex = nil;
-				if(editMode && superpose.not) { this.refresh };
-			})
-			.keyDownAction_({ |view, char, modifiers, unicode, keycode|
-				if(modifiers.isCmd.not) {
-					switch(char,
-						// y zoom out / font zoom
-						$-, {
-							if(modifiers.isCtrl) {
-								plots.do(_.zoomFont(-2));
-							} {
-								this.specs = specs.collect(_.zoom(3/2));
-								normalized = false;
-							}
-						},
-						// y zoom in / font zoom
-						$+, {
-							if(modifiers.isCtrl) {
-								plots.do(_.zoomFont(2));
-							} {
-								this.specs = specs.collect(_.zoom(2/3));
-								normalized = false;
-							}
-						},
-						// compare plots
-						$=, {
-							this.calcSpecs(separately: false);
-							this.updatePlotSpecs;
+				editPos = x @ y;  // new Point instead of cursorPos!
+
+			};
+			if(modifiers.isAlt) { this.postCurrentValue(x, y) };
+		})
+		.mouseUpAction_({
+			cursorPos = nil;
+			editPlotIndex = nil;
+			if(editMode && superpose.not) { this.refresh };
+		})
+		.keyDownAction_({ |view, char, modifiers, unicode, keycode|
+			if(modifiers.isCmd.not) {
+				switch(char,
+					// y zoom out / font zoom
+					$-, {
+						if(modifiers.isCtrl) {
+							plots.do(_.zoomFont(-2));
+						} {
+							this.specs = specs.collect(_.zoom(7/5));
 							normalized = false;
-						},
-
-						/*// x zoom out (doesn't work yet)
-						$*, {
-							this.domainSpecs = domainSpecs.collect(_.zoom(3/2));
-						},
-						// x zoom in (doesn't work yet)
-						$_, {
-							this.domainSpecs = domainSpecs.collect(_.zoom(2/3))
-						},*/
-
-						// normalize
-
-						$n, {
-							if(normalized) {
-								this.specs = specs.collect(_.normalize)
-							} {
-								this.calcSpecs;
-								this.updatePlotSpecs;
-							};
-							normalized = normalized.not;
-						},
-
-						// toggle grid
-						$g, {
-							plots.do { |x| x.gridOnY = x.gridOnY.not }
-						},
-						// toggle domain grid
-						$G, {
-							plots.do { |x| x.gridOnX = x.gridOnX.not };
-						},
-						// toggle plot mode
-						$m, {
-							this.plotMode = modes.next;
-						},
-						// toggle editing
-						$e, {
-							editMode = editMode.not;
-							"plot edit mode %\n".postf(if(editMode) { "on" } { "off" });
-						},
-						// toggle superposition
-						$s, {
-							this.superpose = this.superpose.not;
 						}
-					);
-					parent.refresh;
-				};
-			});
+					},
+					// y zoom in / font zoom
+					$+, {
+						if(modifiers.isCtrl) {
+							plots.do(_.zoomFont(2));
+						} {
+							this.specs = specs.collect(_.zoom(5/7));
+							normalized = false;
+						}
+					},
+					// compare plots
+					$=, {
+						this.calcSpecs(separately: false);
+						this.updatePlotSpecs;
+						normalized = false;
+					},
+
+					/*// x zoom out (doesn't work yet)
+					$*, {
+					this.domainSpecs = domainSpecs.collect(_.zoom(3/2));
+					},
+					// x zoom in (doesn't work yet)
+					$_, {
+					this.domainSpecs = domainSpecs.collect(_.zoom(2/3))
+					},*/
+
+					// normalize
+
+					$n, {
+						if(normalized) {
+							this.specs = specs.collect(_.normalize)
+						} {
+							this.calcSpecs;
+							this.updatePlotSpecs;
+						};
+						normalized = normalized.not;
+					},
+
+					// toggle grid
+					$g, {
+						plots.do { |x| x.gridOnY = x.gridOnY.not }
+					},
+					// toggle domain grid
+					$G, {
+						plots.do { |x| x.gridOnX = x.gridOnX.not };
+					},
+					// toggle plot mode
+					$m, {
+						this.plotMode = modes.next;
+					},
+					// toggle editing
+					$e, {
+						editMode = editMode.not;
+						"plot edit mode %\n".postf(if(editMode) { "on" } { "off" });
+					},
+					// toggle superposition
+					$s, {
+						this.superpose = this.superpose.not;
+					},
+					// print
+					$p, {
+						this.print
+					}
+				);
+				parent.refresh;
+			};
+		});
 	}
-
-	makeButtons {
-		var string = "?";
-		var font = gui.font.sansSerif( 9 );
-		var bounds = string.bounds(font);
-		var padding = 8; // ensure that string is not clipped by round corners
-
-		bounds.width = bounds.width + padding;
-		bounds.height = bounds.height + padding;
-		bounds = bounds.moveTo( parent.view.bounds.right - bounds.width - 2, 8 );
-
-		gui.button.new(parent, bounds)
-		.states_([["?"]])
-		.focusColor_(Color.clear)
-		.font_(font)
-		.resize_(3)
-		.action_ { this.class.openHelpFile };
-
-		^bounds;
-	}
-
 
 	value_ { |arrays|
 		this.setValue(arrays, findSpecs, true)
 	}
 
-	setValue { |arrays, findSpecs = true, refresh = true|
+	setValue { |arrays, findSpecs = true, refresh = true, separately = true, minval, maxval, defaultRange|
 		value = arrays;
+		domain = nil;  // for now require user to re-set domain after setting new value
 		data = this.prReshape(arrays);
 		if(findSpecs) {
-			this.calcSpecs;
 			this.calcDomainSpecs;
+			this.calcSpecs(separately, minval, maxval, defaultRange);
 		};
-		this.updatePlotSpecs;
 		this.updatePlots;
 		if(refresh) { this.refresh };
 	}
 
+	// TODO: currently domain is constrained to being identical across all channels
+	// domain values are (un)mapped within the domainSpec
+	domain_ { |domainArray|
+		var dataSize, sizes;
+
+		domainArray ?? {
+			domain = nil;
+			^this
+		};
+
+		dataSize = if (this.value.rank > 1) {
+			sizes = this.value.collect(_.size);
+			if (sizes.any(_ != this.value[0].size)) {
+				Error(format(
+					"[Plotter:-domain_] Setting the domain values isn't supported "
+					"for multichannel data of different sizes %.", sizes
+				)).throw;
+			};
+			this.value[0].size;
+		} {
+			this.value.size
+		};
+
+
+		if (domainArray.size != dataSize) {
+			Error(format(
+				"[Plotter:-domain_] Domain array size [%] does not "
+				"match data array size [%]", domainArray.size, dataSize
+			)).throw;
+		} {
+			domain = domainArray
+		}
+	}
+
 	superpose_ { |flag|
+		var dom, domSpecs;
+		dom = domain.copy;
+		domSpecs = domainSpecs.copy;
+
 		superpose = flag;
 		if ( value.notNil ){
-			this.setValue(value, false, true);
+			this.setValue(value, false, false);
 		};
+
+		// for individual plots, restore previous domain state
+		this.domain_(dom);
+		if (superpose.not) { this.domainSpecs_(domSpecs) };
+		this.refresh;
 	}
 
 	numChannels {
@@ -573,19 +649,25 @@ Plotter {
 	}
 
 	draw {
-		var b;
-		b = this.interactionView.bounds;
+		var b = this.interactionView.bounds;
 		if(b != bounds) {
 			bounds = b;
 			this.updatePlotBounds;
 		};
-		gui.pen.use {
+		Pen.use {
 			plots.do { |plot| plot.draw };
 		}
 	}
 
 	drawBounds {
 		^bounds.moveTo(0, 0);
+	}
+
+	print {
+		var printer = QPenPrinter.new;
+		printer.showDialog {
+			printer.print { this.draw }
+		} { "printing canceled".postln }
 	}
 
 	// subviews
@@ -608,7 +690,7 @@ Plotter {
 		plots !? { plots = plots.keep(data.size.neg) };
 		plots = plots ++ template.dup(data.size - plots.size);
 		plots.do { |plot, i| plot.value = data.at(i) };
-
+		plotColors !? { this.plotColors_(plotColors) };
 		this.updatePlotSpecs;
 		this.updatePlotBounds;
 	}
@@ -624,14 +706,33 @@ Plotter {
 	}
 
 	updatePlotSpecs {
+		var template, smin, smax;
+
 		specs !? {
-			plots.do { |plot, i|
-				plot.spec = specs.clipAt(i)
+			if (superpose) {
+				// NOTE: for superpose, all spec properties except
+				// minval and maxval are inherited from first spec
+				template = specs[0].copy;
+				smin = specs.collect(_.minval).minItem;
+				smax = specs.collect(_.maxval).maxItem;
+				plots[0].spec = template.minval_(smin).maxval_(smax);
+			} {
+				plots.do { |plot, i|
+					plot.spec = specs.clipAt(i)
+				}
 			}
 		};
+
 		domainSpecs !? {
-			plots.do { |plot, i|
-				plot.domainSpec = domainSpecs.clipAt(i)
+			if (superpose) {
+				template = domainSpecs[0].copy;
+				smin = domainSpecs.collect(_.minval).minItem;
+				smax = domainSpecs.collect(_.maxval).maxItem;
+				plots[0].domainSpec = template.minval_(smin).maxval_(smax);
+			} {
+				plots.do { |plot, i|
+					plot.domainSpec = domainSpecs.clipAt(i)
+				}
 			}
 		}
 	}
@@ -640,6 +741,14 @@ Plotter {
 		pairs.pairsDo { |selector, value|
 			selector = selector.asSetter;
 			plots.do { |x| x.perform(selector, value) }
+		}
+	}
+
+	plotColors_ { |argColors|
+		plotColors = argColors.as(Array);
+		plots.do { |plt, i|
+			// rotate colors to ensure proper behavior with superpose
+			plt.plotColor_(plotColors.rotate(i.neg))
 		}
 	}
 
@@ -668,16 +777,22 @@ Plotter {
 	}
 
 
-	calcSpecs { |separately = true|
-		specs = (specs ? [\unipolar.asSpec]).clipExtend(data.size);
+	calcSpecs { |separately = true, minval, maxval, defaultRange|
+		var ranges = [minval, maxval].flop;
+		var newSpecs = ranges.collect(_.asSpec).clipExtend(data.size);
 		if(separately) {
-			this.specs = specs.collect { |spec, i|
+			newSpecs = newSpecs.collect { |spec, i|
 				var list = data.at(i);
-				list !? { spec = spec.looseRange(list.flat) };
+				if(list.notNil) {
+					spec = spec.looseRange(list, defaultRange, *ranges.wrapAt(i));
+				} {
+					spec
+				};
 			}
 		} {
-			this.specs = specs.first.looseRange(data.flat);
-		}
+			newSpecs = newSpecs.first.looseRange(data.flat, defaultRange, *ranges.at(0));
+		};
+		this.specs = newSpecs;
 	}
 
 	calcDomainSpecs {
@@ -690,7 +805,9 @@ Plotter {
 
 	// interaction
 	pointIsInWhichPlot { |point|
-		var res = plots.detectIndex { |plot|
+		var res;
+		if(plots.isNil) { ^nil };
+		res = plots.detectIndex { |plot|
 			point.y.exclusivelyBetween(plot.bounds.top, plot.bounds.bottom)
 		};
 		^res ?? {
@@ -701,7 +818,7 @@ Plotter {
 	getDataPoint { |x, y|
 		var plotIndex = this.pointIsInWhichPlot(x @ y);
 		^plotIndex !? {
-				plots.at(plotIndex).getDataPoint(x)
+			plots.at(plotIndex).getDataPoint(x)
 		}
 	}
 
@@ -712,7 +829,7 @@ Plotter {
 	editData { |x, y|
 		var plotIndex = this.pointIsInWhichPlot(x @ y);
 		plotIndex !? {
-				plots.at(plotIndex).editData(x, y, plotIndex);
+			plots.at(plotIndex).editData(x, y, plotIndex);
 		};
 	}
 
@@ -736,7 +853,7 @@ Plotter {
 
 
 + ArrayedCollection {
-	plot { |name, bounds, discrete=false, numChannels, minval, maxval|
+	plot { |name, bounds, discrete = false, numChannels, minval, maxval, separately = true|
 		var array, plotter;
 		array = this.as(Array);
 
@@ -748,25 +865,26 @@ Plotter {
 		if(discrete) { plotter.plotMode = \points };
 
 		numChannels !? { array = array.unlace(numChannels) };
-		array = array.collect {|elem|
+		array = array.collect {|elem, i|
 			if (elem.isKindOf(Env)) {
 				elem.asMultichannelSignal.flop
 			} {
+				if(elem.isNil) {
+					Error("cannot plot array: non-numeric value at index %".format(i)).throw
+				};
 				elem
 			}
 		};
+
 		plotter.setValue(
 			array,
 			findSpecs: true,
-			refresh: false
+			separately: separately,
+			refresh: true,
+			minval: minval,
+			maxval: maxval
 		);
-		if(minval.isNumber && maxval.isNumber) {
-			plotter.specs = [minval, maxval].asSpec
-		} {
-			minval !? { plotter.minval = minval };
-			maxval !? { plotter.maxval = maxval };
-		};
-		plotter.refresh;
+
 		^plotter
 	}
 }
@@ -784,73 +902,54 @@ Plotter {
 
 
 + Function {
-	loadToFloatArray { arg duration = 0.01, server, action;
-		var buffer, def, synth, name, numChannels, val, rate;
-		server = server ? Server.default;
-		if(server.serverRunning.not) { "Server not running!".warn; ^nil };
+	plot { |duration = 0.01, target, bounds, minval, maxval, separately = false|
 
-		name = this.hash.asString;
-		def = SynthDef(name, { |bufnum|
-			var	val = this.value;
-			if(val.isValidUGenInput.not) {
-				val.dump;
-				Error("loadToFloatArray failed: % is no valid UGen input".format(val)).throw
-			};
-			val = UGen.replaceZeroesWithSilence(val.asArray);
-			rate = val.rate;
-			if(rate == \audio) { // convert mixed rate outputs:
-				val = val.collect { |x| if(x.rate != \audio) { K2A.ar(x) } { x } }
-			};
-			if(val.size == 0) { numChannels = 1 } { numChannels = val.size };
-			RecordBuf.perform(RecordBuf.methodSelectorForRate(rate), val, bufnum, loop:0);
-			Line.perform(Line.methodSelectorForRate(rate), dur: duration, doneAction: 2);
-		});
-
-		Routine.run({
-			var c, numFrames;
-			c = Condition.new;
-			numFrames = duration * server.sampleRate;
-			if(rate == \control) { numFrames = numFrames / server.options.blockSize };
-			buffer = Buffer.new(server, numFrames, numChannels);
-			server.sendMsgSync(c, *buffer.allocMsg);
-			server.sendMsgSync(c, "/d_recv", def.asBytes);
-			synth = Synth(name, [\bufnum, buffer], server);
-			OSCFunc({
-				buffer.loadToFloatArray(action: { |array, buf|
-					action.value(array, buf);
-					buffer.free;
-					server.sendMsg("/d_free", name);
-				});
-			}, '/n_end', server.addr, nil, [synth.nodeID]).oneShot;
-		});
-	}
-
-	plot { |duration = 0.01, server, bounds, minval, maxval|
-		var name = this.asCompileString, plotter;
+		var name = this.asCompileString, plotter, action;
 		if(name.size > 50 or: { name.includes(Char.nl) }) { name = "function plot" };
 		plotter = Plotter(name, bounds);
-		server = server ? Server.default;
-		server.waitForBoot {
-			this.loadToFloatArray(duration, server, { |array, buf|
-				var numChan = buf.numChannels;
-				{
-					plotter.setValue(
-						array.unlace(numChan).collect(_.drop(-1)),
-						findSpecs: true,
-						refresh: false
-					);
-					if(minval.isNumber && maxval.isNumber) {
-						plotter.specs = [minval, maxval].asSpec
-					} {
-						minval !? { plotter.minval = minval };
-						maxval !? { plotter.maxval = maxval };
-					};
-					plotter.domainSpecs = ControlSpec(0, duration, units: "s");
-					plotter.refresh;
-				}.defer
-			})
+		plotter.value = [0.0];
+		target = target.asTarget;
+		action = { |array, buf|
+			var numChan = buf.numChannels;
+			{
+				plotter.setValue(
+					array.unlace(numChan).collect(_.drop(-1)),
+					findSpecs: true,
+					separately: separately,
+					refresh: false,
+					minval: minval,
+					maxval: maxval
+				);
+				plotter.domainSpecs = ControlSpec(0, duration, units: "s");
+				plotter.refresh;
+			}.defer
 		};
+
+		if(target.server.isLocal) {
+			this.loadToFloatArray(duration, target, action:action)
+		} {
+			this.getToFloatArray(duration, target, action:action)
+		};
+
 		^plotter
+	}
+
+	plotAudio { |duration = 0.01, minval = -1, maxval = 1, server, bounds|
+		^this.plot(duration, server, bounds, minval, maxval)
+	}
+}
+
++ Bus {
+	plot { |duration = 0.01, bounds, minval, maxval, separately = false|
+		if (this.rate == \audio, {
+			^{ InFeedback.ar(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately);
+		},{
+			^{ In.kr(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately);
+		});
+	}
+	
+	plotAudio { |duration = 0.01, minval = -1, maxval = 1, bounds|
+		^this.plot(duration, bounds, minval, maxval)
 	}
 }
 
@@ -861,40 +960,47 @@ Plotter {
 }
 
 + Buffer {
-	plot { |name, bounds, minval, maxval|
-		var plotter;
+	plot { |name, bounds, minval, maxval, separately = false|
+		var plotter, action;
 		if(server.serverRunning.not) { "Server % not running".format(server).warn; ^nil };
 		if(numFrames.isNil) { "Buffer not allocated, can't plot data".warn; ^nil };
+
 		plotter = [0].plot(
 			name ? "Buffer plot (bufnum: %)".format(this.bufnum),
 			bounds, minval: minval, maxval: maxval
 		);
-		this.loadToFloatArray(action: { |array, buf|
+
+		action = { |array, buf|
 			{
 				plotter.setValue(
 					array.unlace(buf.numChannels),
 					findSpecs: true,
-					refresh: false
+					separately: separately,
+					refresh: false,
+					minval: minval,
+					maxval: maxval
 				);
-				if(minval.isNumber && maxval.isNumber) {
-					plotter.specs = [minval, maxval].asSpec
-				} {
-					minval !? { plotter.minval = minval };
-					maxval !? { plotter.maxval = maxval };
-				};
 				plotter.domainSpecs = ControlSpec(0.0, buf.numFrames, units:"frames");
 				plotter.refresh;
 			}.defer
-		});
+		};
+
+		if(server.isLocal) {
+			this.loadToFloatArray(action:action)
+		} {
+			this.getToFloatArray(action:action)
+		};
+
 		^plotter
 	}
 }
+
 
 + Env {
 	plot { |size = 400, bounds, minval, maxval, name|
 		var plotLabel = if (name.isNil) { "envelope plot" } { name };
 		var plotter = [this.asMultichannelSignal(size).flop]
-			.plot(name, bounds, minval: minval, maxval: maxval);
+		.plot(name, bounds, minval: minval, maxval: maxval);
 
 		var duration     = this.duration.asArray;
 		var channelCount = duration.size;
@@ -910,9 +1016,9 @@ Plotter {
 
 + AbstractFunction {
 	plotGraph { arg n=500, from = 0.0, to = 1.0, name, bounds, discrete = false,
-				numChannels, minval, maxval, parent, labels = true;
+		numChannels, minval, maxval, separately = true;
 		var array = Array.interpolation(n, from, to);
 		var res = array.collect { |x| this.value(x) };
-		res.plot(name, bounds, discrete, numChannels, minval, maxval, parent, labels)
+		res.plot(name, bounds, discrete, numChannels, minval, maxval, separately)
 	}
 }

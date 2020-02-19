@@ -1,6 +1,6 @@
 File : UnixFILE {
 
-	classvar <openDialogs, <systemIsCaseSensitive;
+	classvar <systemIsCaseSensitive;
 
 	*initClass {
 		var f = this.filenameSymbol.asString;
@@ -18,6 +18,26 @@ File : UnixFILE {
 		file = this.new(pathName, mode);
 		^{ function.value(file) }.protect({ file.close });
 	}
+	*readAllString { arg pathName;
+		var string;
+		this.use(pathName, "r", { |file| string = file.readAllString });
+		^string
+	}
+	*readAllSignal { arg pathName;
+		var string;
+		this.use(pathName, "r", { |file| string = file.readAllSignal });
+		^string
+	}
+	*readAllStringHTML { arg pathName;
+		var string;
+		this.use(pathName, "r", { |file| string = file.readAllStringHTML });
+		^string
+	}
+	*readAllStringRTF { arg pathName;
+		var string;
+		this.use(pathName, "r", { |file| string = file.readAllStringRTF });
+		^string
+	}
 	*delete { arg pathName;
 		_FileDelete
 		^this.primitiveFailed
@@ -34,7 +54,9 @@ File : UnixFILE {
 		^if(systemIsCaseSensitive) {
 			this.exists(pathName)
 		} {
-			(pathName.dirname+/+"*").pathMatch.detect{|x|x.compare(pathName)==0}.notNil
+			(pathName.dirname +/+ "*").pathMatch
+				.detect({ |x| x.withoutTrailingSlash.compare(pathName.withoutTrailingSlash) == 0 })
+				.notNil
 		}
 	}
 	*realpath { arg pathName;
@@ -61,12 +83,12 @@ File : UnixFILE {
 		_FileSize
 		^this.primitiveFailed
 	}
-
 	*getcwd {
 		var string;
 		this.prGetcwd(string = String.new(256));
 		^string
 	}
+
 	open { arg pathName, mode;
 		/* open the file. mode is a string passed
 			to fopen, so should be one of:
@@ -153,6 +175,54 @@ Pipe : UnixFILE {
 	*new { arg commandLine, mode;
 		^super.new.open(commandLine, mode);
 	}
+
+	*call { arg command, onSuccess, onError, maxLineLength=4096;
+		var r, cancel, closePipe;
+		r = Routine.run({
+			{
+				closePipe = Pipe.callSync(command, onSuccess, onError, maxLineLength)
+			}.protect({
+				CmdPeriod.remove(cancel);
+			});
+		}, clock: AppClock);
+		cancel = {
+			r.stop();
+			("Closed:" + command).postln;
+			closePipe.value();
+			CmdPeriod.remove(cancel);
+		};
+		CmdPeriod.add(cancel);
+		^cancel
+	}
+	*callSync { arg command, onSuccess, onError, maxLineLength=4096;
+		var pipe, lines=[], line, close;
+		pipe = Pipe.new(command, "r");
+		close = {
+			if(pipe.isOpen, {
+				pipe.close();
+			});
+			CmdPeriod.remove(close);
+			close = nil;
+		};
+		CmdPeriod.add(close);
+		line = pipe.getLine(maxLineLength);
+		if(line.isNil, {
+			close.value();
+			// note: if process returns nothing at all
+			// but exits 0 it will still call onError.
+			// currently no way to get exit status
+			onError.value();
+		}, {
+			while({ line.notNil }, {
+				lines = lines.add(line);
+				line = pipe.getLine(maxLineLength);
+			});
+			close.value();
+			onSuccess.value(lines.join(Char.nl));
+		});
+		^close
+	}
+
 	open { arg commandLine, mode;
 		/* open the file. mode is a string passed
 			to popen, so should be one of:

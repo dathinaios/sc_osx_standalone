@@ -7,7 +7,7 @@ Main : Process {
 		// should be nil most of the time
 
 	startup {
-	    var didWarnOverwrite = false;
+		var didWarnOverwrite = false;
 		// setup the platform first so that class initializers can call platform methods.
 		// create the platform, then intialize it so that initPlatform can call methods
 		// that depend on thisProcess.platform methods.
@@ -18,29 +18,10 @@ Main : Process {
 
 		// set the 's' interpreter variable to the default server.
 		interpreter.s = Server.default;
-		GUI.fromID( this.platform.defaultGUIScheme );
-		GeneralHID.fromID( this.platform.defaultHIDScheme );
-		this.platform.startup;
+
 		openPorts = Set[NetAddr.langPort];
+		this.platform.startup;
 		StartUp.run;
-
-		("Welcome to SuperCollider %.".format(Main.version)
-			+ (Platform.ideName.switch(
-				"scvim", {"For help type :SChelp."},
-				"scel",  {"For help type C-c C-y."},
-				"sced",  {"For help type ctrl-U."},
-				"scapp", {"For help type cmd-d."},
-				"scqt", {"For help press %.".format(if(this.platform.name==\osx,"Cmd-D","Ctrl-D"))}
-			) ?? {
-				(
-					osx: "For help type cmd-d.",
-					linux: "For help type ctrl-c ctrl-h (Emacs) or :SChelp (vim) or ctrl-U (sced/gedit).",
-				 	windows: "For help press F1.",
-					iphone: ""
-				 ).at(platform.name);
-
-			})
-		).postln;
 
 		Main.overwriteMsg.split(Char.nl).drop(-1).collect(_.split(Char.tab)).do {|x|
 			if(x[2].beginsWith(Platform.classLibraryDir) and: {x[1].contains(""+/+"SystemOverwrites"+/+"").not}
@@ -50,8 +31,31 @@ Main : Process {
 			}
 		};
 		if(didWarnOverwrite) {
-			inform("\nIntentional overwrites must be put in a 'SystemOverwrites' subfolder.")
-		}
+			postln("Intentional overwrites must be put in a 'SystemOverwrites' subfolder.")
+		};
+
+		("\n\n*** Welcome to SuperCollider %. ***".format(Main.version)
+			+ (Platform.ideName.switch(
+				"scvim", {"For help type :SChelp."},
+				"scel",  {"For help type C-c C-y."},
+				"sced",  {"For help type ctrl-U."},
+				"scapp", {"For help type cmd-d."},
+				"scqt", {
+					if (Platform.hasQtWebEngine) {
+						"For help press %.".format(if(this.platform.name==\osx,"Cmd-D","Ctrl-D"))
+					} {
+						"For help visit http://doc.sccode.org" // Help browser is not available
+					}
+			}) ?? {
+				(
+					osx: "For help type cmd-d.",
+					linux: "For help type ctrl-c ctrl-h (Emacs) or :SChelp (vim) or ctrl-U (sced/gedit).",
+					windows: "For help press F1.",
+					iphone: ""
+				).at(platform.name);
+
+			})
+		).postln;
 	}
 
 	shutdown { // at recompile, quit
@@ -79,13 +83,6 @@ Main : Process {
 		OSCresponder.respond(time, replyAddr, msg);
 	}
 
-	recvOSCbundle { arg time, replyAddr, recvPort ... msgs;
-		// this method is called when an OSC bundle is received.
-		msgs.do({ arg msg;
-			this.recvOSCmessage(time, replyAddr, recvPort, msg);
-		});
-	}
-
 	addOSCRecvFunc { |func| prRecvOSCFunc = prRecvOSCFunc.addFunc(func) }
 
 	removeOSCRecvFunc { |func| prRecvOSCFunc = prRecvOSCFunc.removeFunc(func) }
@@ -104,14 +101,7 @@ Main : Process {
 
 	prOpenUDPPort {|portNum|
 		_OpenUDPPort
-		^false
-	}
-
-	newSCWindow {
-		var win, palette;
-		win = SCWindow("construction");
-		win.front;
-		win.toggleEditMode;
+		^this.primitiveFailed;
 	}
 
 //	override in platform specific extension
@@ -143,10 +133,18 @@ Main : Process {
 
 	*version {^[this.scVersionMajor, ".", this.scVersionMinor, this.scVersionPostfix].join}
 
-	*scVersionMajor   { _SC_VersionMajor }
-	*scVersionMinor   { _SC_VersionMinor }
-	*scVersionPostfix { _SC_VersionPatch }
-
+	*scVersionMajor   {
+		_SC_VersionMajor
+		^this.primitiveFailed
+	}
+	*scVersionMinor   {
+		_SC_VersionMinor
+		^this.primitiveFailed
+	}
+	*scVersionPostfix {
+		_SC_VersionPatch
+		^this.primitiveFailed
+	}
 	*versionAtLeast { |maj, min|
 		^if((maj==this.scVersionMajor) and:{min.notNil}){
 			this.scVersionMinor >= min
@@ -180,8 +178,6 @@ Main : Process {
 
 	exitFullScreen { platform.exitFullScreen }
 
-	setDeferredTaskInterval { |interval| platform.setDeferredTaskInterval(interval) }
-
 	*overwriteMsg { _MainOverwriteMsg ^this.primitiveFailed }
 }
 
@@ -204,21 +200,10 @@ MethodOverride {
 		var path2 = if(overriddenPath.beginsWith("/Common")) {
 			Platform.classLibraryDir +/+ overriddenPath
 			} { overriddenPath };
-		activePath.openTextFile;
-		path2.openTextFile;
+		activePath.openDocument;
+		path2.openDocument;
 	}
 
-	*simplifyPath { arg path;
-		var extDir, sysExtDir, quarkDir;
-		extDir = Platform.userExtensionDir;
-		sysExtDir = Platform.systemExtensionDir;
-		quarkDir = LocalQuarks.globalPath;
-		path = path.replace("'" ++ extDir, "Platform.userExtensionDir ++ '");
-		path = path.replace("'" ++ sysExtDir, "Platform.systemExtensionDir ++ '");
-		path = path.replace("'" ++ quarkDir, "LocalQuarks.globalPath ++ '");
-		^path
-
-	}
 
 	*all {
 		var msg = Main.overwriteMsg.drop(-1); // drop last newline
@@ -226,7 +211,7 @@ MethodOverride {
 		^lines.collect { |line| this.fromLine(line) };
 	}
 
-	*printAll { arg simplifyPaths = true;
+	*printAll {
 		var all = this.all;
 		var classes = all.collect(_.ownerClass).as(Set);
 		if(all.isEmpty) { "There are no overwritten methods in class library".postln; ^this };
@@ -236,10 +221,6 @@ MethodOverride {
 			all.select { |x| x.ownerClass == class }.do { |x|
 				var activePath = x.activePath;
 				var overriddenPath = x.overriddenPath;
-				if(simplifyPaths) {
-					activePath = this.simplifyPath(x.activePath);
-					overriddenPath = this.simplifyPath(x.overriddenPath);
-				};
 				("\t" ++ x.ownerClass.name ++ ":" ++ x.selector).postln;
 				("\t\t" ++ activePath).postln;
 				("\t\t" ++ overriddenPath).postln;

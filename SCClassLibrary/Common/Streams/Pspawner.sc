@@ -37,11 +37,11 @@ Spawner : Pattern {
 		Event.silent(dur, event).yield
 	}
 
-	embedInStream { | inevent, cleanup|
+	embedInStream { | inevent|
 
-		var outevent, stream, nexttime;
+		var outevent, stream, nexttime, cleanup;
 		event = inevent;					// gives genStream access to the event
-		cleanup ?? { cleanup = EventStreamCleanup.new };
+		cleanup = EventStreamCleanup.new;
 
 		while({
 			priorityQ.notEmpty
@@ -77,12 +77,17 @@ Spawner : Pattern {
 }
 
 Pspawner : Prout {
+
 	asStream {
-		^Routine({ | ev | this.embedInStream(ev) })
+		^Routine({ | inval |
+			this.embedInStream(inval)
+		})
 	}
-	embedInStream { | inevent, cleanup |
-		^Spawner(routineFunc).embedInStream(inevent, cleanup ?? { EventStreamCleanup.new });
+
+	embedInStream { | inevent |
+		^Spawner(routineFunc).embedInStream(inevent)
 	}
+
 }
 
 Pspawn : FilterPattern {
@@ -90,81 +95,87 @@ Pspawn : FilterPattern {
 
 	*new { |pattern, spawnProtoEvent|
 		^super.new(pattern)
-			.spawnProtoEvent_(spawnProtoEvent ?? { Event.default });
+		.spawnProtoEvent_(spawnProtoEvent ?? { Event.default });
 	}
 
-	embedInStream { |inevent, cleanup|
+	embedInStream { |inevent|
 		^Spawner({ |sp|
-			var	event, stream = pattern.asStream,
-				child;
+			var	event, stream = pattern.asStream, child, method;
 			while { (event = stream.next(spawnProtoEvent.copy.put(\spawner, sp))).notNil } {
+				method = event[\method];
 				case
-					{ event.method == \wait } {
-						event.spawner.wait(event.delta)
+				{ method == \wait } {
+					event[\spawner].wait(event.delta)
+				}
+				{ #[seq, par].includes(method) } {
+					child = event[\pattern];
+					if(child.isKindOf(Symbol)) {
+						child = (event[\dict] ? Pdef).at(child);
+					};
+					event[\spawner].perform(event.method, child.value(event));
+					if(event.delta > 0) {
+						event[\spawner].wait(event.delta)
 					}
-					{ #[seq, par].includes(event.method) } {
-						child = event[\pattern];
-						if(child.isKindOf(Symbol)) {
-							child = (event[\dict] ? Pdef).at(child);
-						};
-						event.spawner.perform(event.method, child.value(event));
-						if(event.delta > 0) {
-							event.spawner.wait(event.delta)
-						}
-					}
-						// suspend requires access to the specific stream
-						// don't know how to get it... maybe implement later
-					{ event.method == \suspendAll } {
-						event.spawner.suspendAll
-					}
-					{ "Unrecognized method % in spawner event."
-						.format(event.method.asCompileString).warn;
-					}
+				}
+				// suspend requires access to the specific stream
+				// don't know how to get it... maybe implement later
+				{ method == \suspendAll } {
+					event[\spawner].suspendAll
+				}
+				{ "Unrecognized method % in spawner event."
+					.format(method.asCompileString).warn;
+				}
 			};
-		}).embedInStream(inevent, cleanup ?? { EventStreamCleanup.new })
+		}).embedInStream(inevent)
 	}
 }
 
+
+
+
 /*
 (
-	Pseq([
-		Pspawner({ | sp |
-			sp.postln;
-			sp.par(Pbind(*[degree:	Pwhite(0,12), dur: 0.1, db: -30]) );
-			sp.seq(Pbind(*[degree:	Pseq((0..4).mirror.mirror, 1) + [-3, 0,2], ctranspose: -12, dur: 0.2 ]) );
-			"hi".postln;
-			sp.wait(1);
-			"bye".postln;
-			sp.suspendAll;
-		}),
+Pseq([
+Pspawner({ | sp |
+sp.postln;
+sp.par(Pbind(*[degree:	Pwhite(0,12), dur: 0.1, db: -30]) );
+sp.seq(Pbind(*[degree:	Pseq((0..4).mirror.mirror, 1) + [-3, 0,2], ctranspose: -12, dur: 0.2 ]) );
+"hi".postln;
+sp.wait(1);
+"bye".postln;
+sp.suspendAll;
+}),
 
-		Pspawner({ | sp |
-			sp.postln;
-			sp.par(Pbind(*[degree:	Pwhite(0,12), dur: 0.2, ctranspose: -12]) );
-			"hi".postln;
-			sp.wait(4);
-			"bye".postln;
-			sp.suspendAll
-		}),
+Pspawner({ | sp |
+sp.postln;
+sp.par(Pbind(*[degree:	Pwhite(0,12), dur: 0.2, ctranspose: -12]) );
+"hi".postln;
+sp.wait(4);
+"bye".postln;
+sp.suspendAll
+}),
 
-	]).play
+]).play;
+)
 
-	a = Spawner({ |sp | 100.do{ sp.wait(1) } });
-	a.play;
-	b = a.par(Pbind(*[degree: Pwhite(0, 10), dur: 0.2]));
-	a.suspend(b)
-	a.par(b)
 
-	Pspawner({ | sp |
-		5.do {
-			sp.par(Pbind(*[
-				octave: (5.rand + 3).postln,
-				 degree:	Pwhite(0,12), dur: 0.1, db: -30
-			]) );
-			sp.wait(1);
-			sp.clear;
-		}
-	}).play
+a = Spawner({ |sp | 100.do{ sp.wait(1) } });
+a.play;
+b = a.par(Pbind(*[degree: Pwhite(0, 10), dur: 0.2]));
+a.suspend(b)
+a.par(b)
+
+(
+Pspawner({ | sp |
+5.do {
+sp.par(Pbind(*[
+octave: (5.rand + 3).postln,
+degree: Pwhite(0,12), dur: 0.1, db: -30
+]) );
+sp.wait(1);
+sp.clear;
+}
+}).play
 
 )
 */

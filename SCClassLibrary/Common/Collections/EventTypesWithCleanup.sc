@@ -7,8 +7,8 @@ EventTypesWithCleanup {
 		// ~bufnum has a default of 0, so we use ~bufNum instead....
 
 			table: #{ | server |
-			 	var bufNum;
- 				if ( (bufNum = ~bufNum).notNil) {
+				var bufNum;
+				if ( (bufNum = ~bufNum).notNil) {
 					~schedBundle.value(~lag, ~timingOffset, server, [\b_setn, bufNum.asUGenInput, 0, ~amps.size] ++ ~amps)
 				} {
 					~type = \buffer;
@@ -23,8 +23,8 @@ EventTypesWithCleanup {
 			},
 
 			cheby: #{ | server |
-			 	var bufNum;
- 				if ( (bufNum = ~bufNum).notNil) {
+				var bufNum;
+				if ( (bufNum = ~bufNum).notNil) {
 					~schedBundle.value(~lag, ~timingOffset, server, [\b_gen, bufNum.asUGenInput, \cheby, ~genflags ? 7] ++ ~amps)
 				} {
 					~type = \buffer;
@@ -39,8 +39,8 @@ EventTypesWithCleanup {
 			},
 
 			sine1: #{ | server |
-			 	var bufNum;
- 				if ( (bufNum = ~bufNum).notNil) {
+				var bufNum;
+				if ( (bufNum = ~bufNum).notNil) {
 					~schedBundle.value(~lag, ~timingOffset, server, [\b_gen, bufNum.asUGenInput, \sine1, ~genflags ? 7] ++ ~amps)
 				} {
 					~type = \buffer;
@@ -55,9 +55,9 @@ EventTypesWithCleanup {
 			},
 
 			sine2: #{ | server |
-			 	var bufNum,
-			 		array = [~freqs, ~amps].lace(~freqs.size * 2);
- 				if ( (bufNum = ~bufNum).notNil) {
+				var bufNum,
+					array = [~freqs, ~amps].lace(~freqs.size * 2);
+				if ( (bufNum = ~bufNum).notNil) {
 					~schedBundle.value(~lag, ~timingOffset, server, [\b_gen, bufNum.asUGenInput, \sine2, ~genflags ? 7] ++ array)
 				} {
 					~type = \buffer;
@@ -72,9 +72,9 @@ EventTypesWithCleanup {
 			},
 
 			sine3: #{ | server |
-			 	var bufNum,
-			 		array = [~freqs, ~amps, ~phases].lace(~freqs.size * 3);
- 				if ( (bufNum = ~bufNum).notNil) {
+				var bufNum,
+					array = [~freqs, ~amps, ~phases].lace(~freqs.size * 3);
+				if ( (bufNum = ~bufNum).notNil) {
 					~schedBundle.value(~lag, ~timingOffset, server, [\b_gen, bufNum.asUGenInput, \sine3, ~genflags ? 7] ++ array)
 				} {
 					~type = \buffer;
@@ -88,7 +88,7 @@ EventTypesWithCleanup {
 				}
 			},
 
- 			buffer: #{ | server |
+			buffer: #{ | server |
 				~bufNum = server.bufferAllocator.alloc(~numBufs ?? { ~numBufs =  1});
 				~schedBundle.value(~lag, ~timingOffset, server, [\b_alloc, ~bufNum, ~numFrames, ~numChannels]);
 			},
@@ -104,6 +104,14 @@ EventTypesWithCleanup {
 				~schedBundle.value(~lag, ~timingOffset, server, [\b_allocRead, bufNum, ~path, ~firstFileFrame, ~numFrames]);
 			},
 
+			allocWrite: #{|server|
+				var bufNum;
+				if ( (bufNum = ~bufNum).isNil ) { bufNum = ~bufNum = server.bufferAllocator.alloc; ~type = \allocWriteID };
+				~schedBundle.value(~lag, ~timingOffset, server,
+					[\b_alloc, bufNum, ~numFrames, ~numChannels],
+					[\b_write, bufNum, ~path, ~headerFormat, ~sampleFormat, 0, 0, 1]);
+			},
+
 			cue: #{ | server |
 				var  bufNum, bndl, completion;
 				if ( (bufNum = ~bufNum).isNil ) { bufNum = ~bufNum = server.bufferAllocator.alloc; ~type = \cueID };
@@ -117,14 +125,23 @@ EventTypesWithCleanup {
 				~schedBundle.value(~lag, ~timingOffset, server, [\b_free, ~bufNum]);
 			},
 
+			freeAllocWrite: #{|server|
+				~schedBundle.value(~lag, ~timingOffset, server, [\b_close, ~bufNum], [\b_free, ~bufNum]);
+			},
+
+			freeAllocWriteID: #{|server|
+				~schedBundle.value(~lag, ~timingOffset, server, [\b_close, ~bufNum], [\b_free, ~bufNum]);
+				server.bufferAllocator.free(~bufNum);
+			},
+
 			freeCue: #{ | server |
 				var bufNum = ~bufNum;
-				server.schedBundleArray.value(~lag, ~timingOffset, server, [["/b_close", bufNum], ["/b_free", bufNum ] ]  );
+				~schedBundleArray.value(~lag, ~timingOffset, server, [['/b_close', bufNum],['/b_free', bufNum ]] );
 			},
 
 			freeCueID: #{ | server |
 				var bufNum = ~bufNum;
-				server.schedBundleArray.value(~lag, ~timingOffset, server, [["/b_close", bufNum], ["/b_free", bufNum ] ]  );
+				~schedBundleArray.value(~lag, ~timingOffset, server, [['/b_close', bufNum], ['/b_free', bufNum ]] );
 				server.bufferAllocator.free(bufNum);
 			},
 
@@ -159,6 +176,7 @@ EventTypesWithCleanup {
 			note:	false,
 			on:		false,
 			group:	false,
+			fadeBus: false,
 			tree:	false
 		);
 
@@ -166,6 +184,8 @@ EventTypesWithCleanup {
 			table:		\freeBuffer,			// free buffer and deallocate bufNum
 			buffer:		\freeBuffer,			// free buffer and deallocate bufNum
 			allocRead:	\freeAllocRead,		// free buffer
+			allocWrite: \freeAllocWrite,    // close file and free buffer
+			allocWriteID:	\freeAllocWriteID,		// close file, free buffer and deallocate bufNum
 			cue:			\freeCue,				// free buffer, close file
 			allocReadID:	\freeBuffer,			// free buffer and deallocate bufNum
 			cueID:		\freeCueID,			// free buffer, close file, and deallocate bufNum
@@ -188,6 +208,8 @@ EventTypesWithCleanup {
 			buffer: 		\bufNum,
 			allocRead: 	\bufNum,
 			allocReadID: 	\bufNum,
+			allocWrite: 	\bufNum,
+			allocWriteID: 	\bufNum,
 			audioBus:		\out,
 			controlBus:	\out,
 			on:			\id,
@@ -201,9 +223,17 @@ EventTypesWithCleanup {
 		type = ev[\type];
 		notNode = notNodeType[type] ? true;
 		if (flag || notNode) {
-			 (	parent: ev,
-				type: cleanupTypes[type]
-			).play;
+			if(cleanupTypes[type].notNil,
+				{
+					(
+						parent: ev,
+						type: cleanupTypes[type]
+					).play;
+				},
+				{
+					"Cleanup type for event type '%' not found".format(type).warn;
+				}
+			);
 		}
 	}
 

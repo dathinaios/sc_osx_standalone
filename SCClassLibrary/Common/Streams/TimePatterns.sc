@@ -4,7 +4,10 @@ Pstep : Pattern {
 	*new { arg levels, durs = 1, repeats = 1;
 		^super.newCopyArgs(levels, durs, repeats).init
 	}
-	init { if (list.isKindOf(Collection)) { list = Pseq(list); } }
+	init {
+		if (list.isSequenceableCollection) { list = Pseq(list); };
+		if (durs.isSequenceableCollection) { durs = Pseq(durs); };
+	}
 
 	embedInStream { arg inval;
 		var stream, val,dur;
@@ -15,7 +18,7 @@ Pstep : Pattern {
 		repeats.value(inval).do { | i |
 			stream = Ptuple([list, durs]).asStream;
 			while (
-				{ #val, dur = stream.next(inval) ? [nil, nil];
+				{ #val, dur = stream.next(inval) ?? { #[nil, nil] };
 					val.notNil;
 				},
 				{

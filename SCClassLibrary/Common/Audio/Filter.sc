@@ -1,5 +1,5 @@
 Filter : PureUGen {
- 	checkInputs { ^this.checkSameRateAsFirstInput }
+	checkInputs { ^this.checkSameRateAsFirstInput }
 }
 
 Resonz : Filter {
@@ -70,10 +70,18 @@ Decay2 : Filter {
 Lag : Filter {
 
 	*ar { arg in = 0.0, lagTime = 0.1, mul = 1.0, add = 0.0;
-		^this.multiNew('audio', in, lagTime).madd(mul, add)
+		if ( (in.rate == \scalar) || (lagTime == 0) ) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('audio', in, lagTime).madd(mul, add)
+		}
 	}
 	*kr { arg in = 0.0, lagTime = 0.1, mul = 1.0, add = 0.0;
-		^this.multiNew('control', in, lagTime).madd(mul, add)
+		if ( (in.rate == \scalar) || (lagTime == 0) ) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('control', in, lagTime).madd(mul, add)
+		}
 	}
 }
 
@@ -81,14 +89,21 @@ Lag2 : Lag {}
 Lag3 : Lag {}
 Ramp : Lag {}
 
-/// added by nescivi - 15 may 2007
 LagUD : Filter {
 
 	*ar { arg in = 0.0, lagTimeU = 0.1, lagTimeD = 0.1,  mul = 1.0, add = 0.0;
-		^this.multiNew('audio', in, lagTimeU, lagTimeD).madd(mul, add)
+		if (in.rate == \scalar) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('audio', in, lagTimeU, lagTimeD).madd(mul, add)
+		}
 	}
 	*kr { arg in = 0.0, lagTimeU = 0.1, lagTimeD = 0.1, mul = 1.0, add = 0.0;
-		^this.multiNew('control', in, lagTimeU, lagTimeD).madd(mul, add)
+		if (in.rate == \scalar) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('control', in, lagTimeU, lagTimeD).madd(mul, add)
+		}
 	}
 }
 
@@ -97,10 +112,18 @@ Lag3UD : LagUD {}
 
 VarLag : Filter {
 	*ar { arg in = 0.0, time = 0.1, curvature = 0, warp = 5, start, mul = 1.0, add = 0.0;
-		^this.multiNew('audio', in, time, curvature, warp, start).madd(mul, add);
+		if ( (in.rate == \scalar) || (time == 0) ) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('audio', in, time, curvature, warp, start).madd(mul, add);
+		}
 	}
 	*kr { arg in = 0.0, time = 0.1, curvature = 0, warp = 5, start, mul = 1.0, add = 0.0;
-		^this.multiNew('control', in, time, curvature, warp, start).madd(mul, add);
+		if ( (in.rate == \scalar) || (time == 0) ) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('control', in, time, curvature, warp, start).madd(mul, add);
+		}
 	}
 	// FIXME: Implement 'curve' input on VLag ugen instead of using EnvGen.
 	// Then \exp warp should probably behave as Lag ugen.
@@ -202,12 +225,12 @@ Slope : Filter {
 }
 
 Changed : Filter {
-		*kr { arg input, threshold = 0;
-			^HPZ1.kr(input).abs > threshold
-		}
-		*ar { arg input, threshold = 0;
-			^HPZ1.ar(input).abs > threshold
-		}
+	*kr { arg input, threshold = 0;
+		^HPZ1.kr(input).abs > threshold
+	}
+	*ar { arg input, threshold = 0;
+		^HPZ1.ar(input).abs > threshold
+	}
 }
 
 LPZ2 : Filter {
@@ -234,13 +257,13 @@ Median : Filter {
 		^this.multiNew('control', length, in).madd(mul, add)
 	}
 	checkInputs {
- 		if (rate == 'audio', {
- 			if (inputs.at(1).rate != 'audio', {
- 				^"input was not audio rate";
- 			});
- 		});
- 		^this.checkValidInputs
- 	}
+		if (rate == 'audio', {
+			if (inputs.at(1).rate != 'audio', {
+				^"input was not audio rate";
+			});
+		});
+		^this.checkValidInputs
+	}
 
 }
 
@@ -257,10 +280,18 @@ Median : Filter {
 
 Slew : Filter {
 	*ar { arg in = 0.0, up = 1.0, dn = 1.0, mul = 1.0, add = 0.0;
-		^this.multiNew('audio', in, up, dn).madd(mul, add)
+		if (in.rate == \scalar) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('audio', in, up, dn).madd(mul, add)
+		}
 	}
 	*kr { arg in = 0.0, up = 1.0, dn = 1.0, mul = 1.0, add = 0.0;
-		^this.multiNew('control', in, up, dn).madd(mul, add)
+		if (in.rate == \scalar) {
+			^in.madd(mul, add)
+		} {
+			^this.multiNew('control', in, up, dn).madd(mul, add)
+		}
 	}
 }
 
@@ -328,11 +359,9 @@ DetectSilence : Filter {
 
 	*ar { arg in = 0.0, amp = 0.0001, time = 0.1, doneAction = 0;
 		^this.multiNew('audio', in, amp, time, doneAction)
-		//		^0.0		// DetectSilence has no output
 	}
 	*kr { arg in = 0.0, amp = 0.0001, time = 0.1, doneAction = 0;
 		^this.multiNew('control', in, amp, time, doneAction)
-		//		^0.0		// DetectSilence has no output
 	}
 }
 

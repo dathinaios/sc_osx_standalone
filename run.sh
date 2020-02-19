@@ -1,5 +1,5 @@
 echo "includePaths:
-    - overwrites
+    - SystemOverwrites
     - SCClassLibrary
 excludePaths:
     - $HOME/Library/Application Support/SuperCollider/Extensions

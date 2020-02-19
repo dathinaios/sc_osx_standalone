@@ -63,6 +63,10 @@ Collection {
 		^obj
 	}
 
+	++ { | collection|
+		^this.copy.addAll(collection)
+	}
+
 	@ { | index | ^this[index] }
 
 	== { | aCollection |
@@ -101,6 +105,7 @@ Collection {
 	notEmpty { ^this.size > 0 }
 	asCollection { ^this }
 	isCollection { ^true }
+	isAssociationArray { ^this.subclassResponsibility(thisMethod) }
 
 	add { ^this.subclassResponsibility(thisMethod) }
 	addAll { | aCollection | aCollection.asCollection.do { | item | this.add(item) } }
@@ -176,6 +181,13 @@ Collection {
 		}
 		^res;
 	}
+	collectInPlace { |function |
+		this.do { |item, i| this.put(i, function.value(item, i)) }
+	}
+	collectCopy { |func|
+		^this.copy.collectInPlace(func)
+	}
+
 	detect { | function |
 		this.do {|elem, i| if (function.value(elem, i)) { ^elem } }
 		^nil;
@@ -228,6 +240,14 @@ Collection {
 		var nextValue = thisValue;
 		this.do { | item, i |
 			nextValue = function.value(nextValue, item, i);
+		};
+		^nextValue
+	}
+	injectr { | thisValue, function |
+		var size = this.size;
+		var nextValue = thisValue;
+		this.do { | item, i |
+			nextValue = function.value(nextValue, this.at(size-1-i), i);
 		};
 		^nextValue
 	}
@@ -456,7 +476,7 @@ Collection {
 		};
 		^res
 	}
-	
+
 	deepCollect { | depth = 1, function, index = 0, rank = 0 |
 		if(depth.isNil) {
 			rank = rank + 1;
@@ -532,11 +552,65 @@ Collection {
 	}
 	isSubsetOf { | that | ^that.includesAll(this) }
 
-	asArray { ^Array.new(this.size).addAll(this); }
-	asBag { ^Bag.new(this.size).addAll(this); }
-	asList { ^List.new(this.size).addAll(this); }
-	asSet { ^Set.new(this.size).addAll(this); }
-	asSortedList { | function | ^SortedList.new(this.size, function).addAll(this); }
+	asArray { ^Array.new(this.size).addAll(this) }
+	asBag { ^Bag.new(this.size).addAll(this) }
+	asList { ^List.new(this.size).addAll(this) }
+	asSet { ^Set.new(this.size).addAll(this) }
+	asSortedList { | function | ^SortedList.new(this.size, function).addAll(this) }
+
+	asAssociations { |class|
+		var res;
+		class = class ? Array;
+		if(this.isAssociationArray) {
+			^if(class == this.class) { this } { this.as(class) }
+		};
+		res = class.new(this.size div: 2);
+		this.pairsDo { |key, val| res = res.add(key -> val) }
+		^res
+	}
+
+	asPairs { |class|
+		var res;
+		class = class ? Array;
+		if(this.isAssociationArray.not) {
+			^if(class == this.class) { this } { this.as(class) }
+		};
+		res = class.new(this.size * 2);
+		this.do { |assoc| res = res.add(assoc.key).add(assoc.value) }
+		^res
+	}
+
+	asDict { |mergeFunc, class|
+		var res = (class ? IdentityDictionary).new;
+		if(mergeFunc.notNil) { ^this.asDictWith(mergeFunc, class) };
+		if(this.isAssociationArray) {
+			this.do { |assoc|
+				res.put(assoc.key, assoc.value)
+			}
+		} {
+			this.pairsDo { |key, val|
+				res.put(key, val)
+			}
+		};
+		^res
+	}
+
+	asDictWith { |mergeFunc, class|
+		var res = (class ? IdentityDictionary).new;
+		if(this.isAssociationArray) {
+			this.do { |assoc|
+				res.mergeItem(assoc.key, assoc.value, mergeFunc)
+			}
+		} {
+			this.pairsDo { |key, val|
+				res.mergeItem(key, val, mergeFunc)
+			}
+		};
+		^res
+	}
+
+	asEvent { |mergeFunc| ^this.asDict(mergeFunc, Event) }
+
 
 	powerset {
 		var species = this.species;
@@ -584,7 +658,7 @@ Collection {
 		};
 
 		if (outliers > 0) {
-			("histogram :" + outliers + "out of (histogram) range values in collection.").inform;
+			("histogram :" + outliers + "out of (histogram) range values in collection.").postln;
 		};
 
 		^freqs;

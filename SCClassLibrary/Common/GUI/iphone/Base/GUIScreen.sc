@@ -40,7 +40,7 @@ SCWindow {
 			{view.decorator_( FlowLayout( view.bounds.moveTo(0,0), margin, gap ) )}
 			{view.decorator_( FlowLayout( view.bounds, margin, gap ) )};
 		^this.view.decorator;
-		 }
+	}
 
 	*closeAll {
 		var list;
@@ -103,6 +103,7 @@ SCWindow {
 
 	prSetAlwaysOnTop{|boolean=true|
 		_SCWindow_AlwaysOnTop
+		^this.primitiveFailed;
 	}
 
 	acceptsClickThrough_{|boolean=true|
@@ -112,6 +113,7 @@ SCWindow {
 
 	prSetAcceptsClickThrough{|boolean=true|
 		_SCWindow_AcceptsClickThrough
+		^this.primitiveFailed;
 	}
 
 	refresh {

@@ -13,9 +13,13 @@ Env {
 		^super.newCopyArgs(levels, times, curve ? \lin, releaseNode, loopNode, offset)
 	}
 
-	*newClear { arg numSegments = 8;
+	*newClear { arg numSegments = 8, numChannels = 1;
 		// make an envelope for filling in later.
-		^this.new(Array.fill(numSegments + 1, 0), Array.fill(numSegments, 1))
+		if (numChannels == 1) {
+			^this.new(Array.fill(numSegments + 1, 0), Array.fill(numSegments, 1))
+		} {
+			^this.new(Array.fill(numSegments + 1, {0 ! numChannels} ), Array.fill(numSegments, {1 ! numChannels} ), Array.fill(numSegments, {\lin ! numChannels}))
+		}
 	}
 
 	*initClass {
@@ -32,17 +36,18 @@ Env {
 			\sqr -> 6,
 			\squared -> 6,
 			\cub -> 7,
-			\cubed -> 7
+			\cubed -> 7,
+			\hold -> 8,
 		];
 		shapeNames.freeze;
 	}
 
-	kr { arg doneAction = 0, gate = 1.0, timeScale = 1.0, mul = 1.0, add = 0.0;
-		^EnvGen.kr(this, gate, mul, add, timeScale, doneAction)
+	kr { arg doneAction = 0, gate = 1.0, timeScale = 1.0, levelScale = 1.0, levelBias = 0.0;
+		^EnvGen.kr(this, gate, levelScale, levelBias, timeScale, doneAction)
 	}
 
-	ar { arg doneAction = 0, gate = 1.0, timeScale = 1.0, mul = 1.0, add = 0.0;
-		^EnvGen.ar(this, gate, mul, add, timeScale, doneAction)
+	ar { arg doneAction = 0, gate = 1.0, timeScale = 1.0, levelScale = 1.0, levelBias = 0.0;
+		^EnvGen.ar(this, gate, levelScale, levelBias, timeScale, doneAction)
 	}
 
 	levels_ { arg z;
@@ -91,6 +96,10 @@ Env {
 		^this.copy.levels_(levels.linexp(levels.minItem, levels.maxItem, lo, hi))
 	}
 
+	curverange { arg lo = 0.0, hi = 1.0, curve = -4;
+		^this.copy.levels_(levels.lincurve(levels.minItem, levels.maxItem, lo, hi, curve))
+	}
+
 	// methods to make some typical shapes :
 
 	// fixed duration envelopes
@@ -131,7 +140,7 @@ Env {
 	*xyc { arg xyc;
 		var times, levels, curves, offset, order;
 		#times, levels, curves = xyc.flop;
-		if(times.containsSeqColl.not) { // sort triplets, if possible.
+		if(times.every(_.isKindOf(Magnitude))) { // sort triplets, if possible.
 			order = times.order;
 			times = times[order];
 			levels = levels[order];
@@ -146,6 +155,13 @@ Env {
 	*pairs { arg pairs, curve;
 		if(curve.isNil) { ^this.xyc(pairs) };
 		^this.xyc(pairs +++ curve);
+	}
+
+	*step { |levels = #[0,1], times = #[1,1], releaseNode, loopNode, offset = 0|
+		if( levels.size != times.size ) {
+			Error("Env#*step : levels and times must have same size").throw
+		};
+		^Env([levels[0]]++levels, times, \step, releaseNode, loopNode, offset)
 	}
 
 	// envelopes with sustain

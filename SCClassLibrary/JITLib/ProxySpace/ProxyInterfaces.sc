@@ -48,6 +48,16 @@ AbstractPlayControl {
 	parents { ^nil }
 	store {}
 
+	copy {
+		^this.class.new.copyState(this)
+	}
+
+	copyState { |control|
+		source = control.source; // source is not copied, assumed to be stateless
+		channelOffset = control.channelOffset;
+		paused = control.paused;
+	}
+
 
 }
 
@@ -57,7 +67,7 @@ AbstractPlayControl {
 
 StreamControl : AbstractPlayControl {
 
-	var stream, clock;
+	var stream, <clock;
 
 	playToBundle { | bundle |
 		// no latency (latency is in stream already)
@@ -87,6 +97,24 @@ StreamControl : AbstractPlayControl {
 	}
 	stop { stream.stop }
 
+	copyState { |control|
+		// stream can't be copied.
+		// control has to be rebuilt (see: NodeProxy:copyState)
+		super.copyState(control);
+		clock = control.clock;
+	}
+
+	copyRequiresRebuild {
+		^true
+	}
+
+	controlNames {
+		^if(source.isNumber or: { source.isArray }) {
+			// this special key (#) allows to set the source from a slider
+			ControlName('#', defaultValue:source)
+		}
+	}
+
 }
 
 
@@ -95,7 +123,7 @@ PatternControl : StreamControl {
 	var fadeTime, <array;
 
 	playStream { | str |
-		var dt = fadeTime.value;
+		var dt = fadeTime.value ? 0.0;
 		if(dt <= 0.02) {
 			str.play(clock, false, 0.0)
 		} {
@@ -147,8 +175,8 @@ PatternControl : StreamControl {
 		{
 			str = source.buildForProxy(proxy, channelOffset);
 			if(args.notNil) {
-					event = str.event;
-					args.pairsDo { arg key, val; event[key] = val }
+				event = str.event;
+				args.value.pairsDo { arg key, val; event[key] = val }
 			};
 			array = array.add(str);
 			// no latency (latency is in stream already)
@@ -171,7 +199,9 @@ PatternControl : StreamControl {
 SynthControl : AbstractPlayControl {
 
 	var <server, <>nodeID;
-	var <canReleaseSynth=false, <canFreeSynth=false;
+	var <canReleaseSynth=false, <canFreeSynth=false, <hasFadeTimeControl=false;
+	var prevBundle;
+
 
 	loadToBundle {} // assumes that SynthDef is loaded in the server
 
@@ -179,20 +209,21 @@ SynthControl : AbstractPlayControl {
 
 	distributable { ^canReleaseSynth } // n_free not implemented in shared node proxy
 
-	build { | proxy | 	// assumes audio rate proxy if not initialized
+	build { | proxy, orderIndex | 	// assumes audio rate proxy if not initialized
 		var rate, desc;
 		desc = this.synthDesc;
 		if(desc.notNil) {
 			canFreeSynth = desc.canFreeSynth;
 			canReleaseSynth = desc.hasGate && canFreeSynth;
+			hasFadeTimeControl = desc.controls.any { |x| x.name === \fadeTime };
 		};
 		if(proxy.isNeutral) { rate = \audio };
-		^proxy.initBus(rate, proxy.numChannels ? 2)
+		^proxy.initBus(rate)
 	}
 
 	spawnToBundle { | bundle, extraArgs, target, addAction = 0 | // assumes self freeing
 		var targetID = target.asTarget.nodeID;
-		bundle.add([9, this.asDefName, -1, addAction, targetID]++extraArgs.asOSCArgArray);
+		bundle.addCancel({ [9, this.asDefName, -1, addAction, targetID] ++ extraArgs.value });
 	}
 
 	playToBundle { | bundle, extraArgs, target, addAction = 1 |
@@ -200,27 +231,37 @@ SynthControl : AbstractPlayControl {
 		server = target.server;
 		group = target.asTarget;
 		nodeID = server.nextNodeID;
-		bundle.add([9, this.asDefName, nodeID, addAction, group.nodeID]++extraArgs.asOSCArgArray);
-		if(paused) { bundle.add(["/n_run", nodeID, 0]) };
+		bundle.addCancel({ [9, this.asDefName, nodeID, addAction, group.nodeID] ++ extraArgs.value });
+		if(paused) { bundle.addCancel(["/n_run", nodeID, 0]) };
+		prevBundle = bundle;
 		^nodeID
 	}
 
 	stopToBundle { | bundle, fadeTime |
 		if(nodeID.notNil) {
+
 			if(canReleaseSynth) {
-					bundle.addAll([['/error', -1], [15, nodeID, \gate, 0.0, \fadeTime, fadeTime], ['/error', -2]]);
+				if(hasFadeTimeControl) {
+					bundle.addAll([['/error', -1], [15, nodeID, \fadeTime, fadeTime, \gate, 0], ['/error', -2]])
+				} {
+					bundle.addAll([['/error', -1], [15, nodeID, \gate, -1.0 - fadeTime.abs], ['/error', -2]])
+				}
 			} {
-					if(canFreeSynth.not) { //"/n_free"
-						bundle.addAll([['/error', -1], [11, nodeID], ['/error', -2]]);
-					};
-					// otherwise it is self freeing by some inner mechanism.
+				if(canFreeSynth.not) { //"/n_free"
+					bundle.addAll([['/error', -1], [11, nodeID], ['/error', -2]]);
+				}
+				// otherwise it is self freeing by some inner mechanism.
 			};
 			nodeID = nil;
 		}
 	}
 
+	freeToBundle {
+		prevBundle !? { prevBundle.cancel };
+	}
+
 	set { | ... args |
-		server.sendBundle(server.latency, ["/n_set", nodeID] ++ args);
+		server.sendBundle(server.latency, ["/n_set", nodeID] ++ args.asOSCArgArray);
 	}
 
 	pause { | clock, quant = 1 |
@@ -255,39 +296,59 @@ SynthControl : AbstractPlayControl {
 
 	store { SynthDescLib.global.read(this.synthDefPath) }
 
+	copyState { |control|
+		super.copyState(control);
+		server = control.server;
+		canReleaseSynth = control.canReleaseSynth;
+		canFreeSynth = control.canFreeSynth;
+	}
+
 }
 
 
 SynthDefControl : SynthControl {
 
 	var <synthDef, <parents;
+	var <bytes;
 
 	readyForPlay { ^synthDef.notNil }
 
 	build { | proxy, orderIndex = 0 |
-		var ok, rate, numChannels;
+		var ok, rate, numChannels, outerDefControl, outerBuildProxy, controlNames;
 
+		outerDefControl = NodeProxy.buildProxyControl;
+		outerBuildProxy = NodeProxy.buildProxy;
 		NodeProxy.buildProxyControl = this;
+		NodeProxy.buildProxy = proxy;
 		synthDef = source.buildForProxy(proxy, channelOffset, orderIndex);
-		NodeProxy.buildProxyControl = nil;
+		NodeProxy.buildProxyControl = outerDefControl;
+		outerBuildProxy = outerBuildProxy;
 
-		rate = synthDef.rate ?? { if(proxy.rate !== \control) { \audio } { \control } };
-		numChannels = synthDef.numChannels ? proxy.numChannels ? 2;
+		rate = synthDef.rate;
+		numChannels = synthDef.numChannels;
 		ok = proxy.initBus(rate, numChannels);
 
-		if(ok and: { synthDef.notNil}) {
+		if(ok) {
 			paused = proxy.paused;
 			canReleaseSynth = synthDef.canReleaseSynth;
 			canFreeSynth = synthDef.canFreeSynth;
+			controlNames = synthDef.allControlNames;
+			hasFadeTimeControl = controlNames.notNil and: {
+				controlNames.any { |x| x.name === \fadeTime }
+			};
 		} {
 			synthDef = nil;
+			"synth def couldn't be built".warn;
 		}
 	}
 
 	loadToBundle { | bundle, server |
-		var bytes, size, path;
+		var size, path;
 
-		bytes = synthDef.asBytes;
+		// cache rendered synth def, so it can be copied if necessary (see: copyData)
+		// We need to keep the bytes here, because some other instance may have deleted it from the server (see: freeToBundle)
+		// the resulting synthDef will have the same name, because the name is encoded in the data (bytes).
+		bytes = bytes ?? { synthDef.asBytes }; // here the work for sclang is done.
 		size = bytes.size;
 		size = size - (size bitAnd: 3) + 84; // 4 + 4 + 16 + 16 // appx path length size + overhead
 		if(server.options.protocol === \tcp or: { size < 16383}) {
@@ -297,16 +358,20 @@ SynthDefControl : SynthControl {
 			// bridge exceeding bundle size by writing to disk
 			if(server.isLocal.not) {
 				Error("SynthDef too large (" ++ size
-				++ " bytes) to be sent to remote server via udp").throw;
+					++ " bytes) to be sent to remote server via udp").throw;
 			};
 			path = this.synthDefPath;
 			this.writeSynthDefFile(path, bytes);
 			bundle.addPrepare([6, path]); // "/d_load"
-		}
+		};
+		prevBundle = bundle;
 	}
 
-	freeToBundle { | bundle |
-		if(synthDef.notNil) { bundle.addPrepare([53, synthDef.name]) } // "/d_free"
+	freeToBundle { | bundle, proxy |
+		if(synthDef.notNil) { bundle.addPrepare([53, synthDef.name]) }; // "/d_free"
+		parents.do { |x| x.removeChild(proxy) };
+		bytes = parents = nil;
+		prevBundle !? { prevBundle.cancel };
 	}
 
 	writeSynthDefFile { | path, bytes |
@@ -324,9 +389,20 @@ SynthDefControl : SynthControl {
 
 	addParent { | proxy |
 		if(parents.isNil) { parents = IdentitySet.new };
-		parents.add(proxy);
+		if(parents.includes(proxy).not) {
+			parents.add(proxy);
+			proxy.addChild(NodeProxy.buildProxy);
+		}
 	}
 
 	controlNames { ^synthDef.allControlNames }
+
+	copyState { |control|
+		super.copyState(control);
+		synthDef = control.synthDef;
+		parents = control.parents.copy;
+		bytes = control.bytes; // copy cached data
+	}
+
 
 }

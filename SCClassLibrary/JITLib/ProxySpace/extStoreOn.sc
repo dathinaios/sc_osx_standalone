@@ -5,16 +5,15 @@
 	}
 }
 
-+Symbol {
++ Symbol {
 
 	isBasicOperator {
-		^#['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', '&&', '||', '@' ]
-			.includes(this);
+		^#['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', '&&', '||', '@' ].includes(this);
 	}
 
 }
 
-+Object {
++ Object {
 
 	// might need correction for literals.
 	envirKey { | envir |
@@ -28,14 +27,14 @@
 }
 
 
-+NodeProxy {
++ NodeProxy {
 
 	key { | envir |
 		^super.envirKey(envir);
 	}
 
 	servStr {
-		^if (server != Server.default) { "(" ++ server.asCompileString ++")" } { "" }
+		^if(server != Server.default) { "(" ++ server.asCompileString ++")" } { "" }
 	}
 
 	// not ideal, but usable for now.
@@ -100,11 +99,13 @@
 		var defAmps = 1 ! numCh;
 		var defIns = { |i| i + this.index } ! numCh;
 		var defVol = 1;
+		var defFadeTime = 0.02 ! numCh;
 
 		var outs = try { this.monitor.outs } ? defOuts;
 		var amps = try { this.monitor.amps } ? defAmps;
 		var ins  = try { this.monitor.ins }  ? defIns;
 		var vol  = try { this.monitor.vol }  ? defVol;
+		var fadeTime = try { this.monitor.fadeTime }  ? defFadeTime;
 
 		var setStr = "";
 
@@ -123,7 +124,11 @@
 		};
 		if (dropDefaults.not or: { vol != defVol }) {
 			if (setStr.size > 0) { setStr = setStr ++ ", \n" };
-			setStr = setStr ++ "\tvol:" + vol ++ "\n";
+			setStr = setStr ++ "\tvol:" + vol;
+		};
+		if (dropDefaults.not or: { fadeTime != defFadeTime }) {
+			if (setStr.size > 0) { setStr = setStr ++ ", \n" };
+			setStr = setStr ++ "\tfadeTime:" + fadeTime;
 		};
 		if (setStr.size > 0) {
 			setStr = "(\n" ++ setStr ++ "\n)";
@@ -165,15 +170,15 @@
 		isInCurrent = envir.includes(this);
 		isOnDefault = server === Server.default;
 
-	//	[\isAnon, isAnon, \isSingle, isSingle, \isInCurrent, isInCurrent, \isOnDefault, isOnDefault].postln;
+		//	[\isAnon, isAnon, \isSingle, isSingle, \isInCurrent, isInCurrent, \isOnDefault, isOnDefault].postln;
 
 		space = ProxySpace.findSpace(this);
 		spaceCS = try { space.asCode } {
-			inform("// <could not find a space for proxy: %!>".format(this.asCompileString));
+			postln("// <could not find a space for proxy: %!>".format(this.asCompileString));
 			""
 		};
 
-		docStr = String.streamContents { arg stream;
+		docStr = String.streamContents { |stream|
 			if(isSingle) {
 				str = nameStr;
 				srcStr = if (this.source.notNil) { this.source.envirCompileString } { "" };
@@ -198,7 +203,7 @@
 					indexStr = "a";
 				};
 
-				this.objects.keysValuesDo { arg index, item;
+				this.objects.keysValuesDo { |index, item|
 
 					srcStr = item.source.envirCompileString ? "";
 					isMultiline = srcStr.includes(Char.nl);
@@ -210,13 +215,13 @@
 
 			stream << str << if (str.keep(-2).includes($;)) { "\n" } { ";\n" };
 
-				// add settings to compile string
+			// add settings to compile string
 			if(includeSettings) {
-					this.nodeMap.storeOn(stream, indexStr, true);
+				stream << this.nodeMap.asCode(indexStr, true);
 			};
-				// include play settings if playing ...
-				// hmmm - also keep them if not playing,
-				// but inited to something non-default?
+			// include play settings if playing ...
+			// hmmm - also keep them if not playing,
+			// but inited to something non-default?
 			if (this.rate == \audio and: includeMonitor) {
 				if (this.monitor.notNil) {
 					if (this.isMonitoring) {
@@ -233,13 +238,15 @@
 	}
 
 	document { | includeSettings = true, includeMonitor = true |
-		^this.asCode(includeSettings, includeMonitor).newTextWindow("document :" + this.asCompileString)
+		var nameStr = this.class.asString ++"_" ++ this.key;
+		^this.asCode(includeSettings, includeMonitor)
+		.newTextWindow("document-" ++ nameStr)
 	}
 
 }
 
 
-+BinaryOpPlug {
++ BinaryOpPlug {
 
 	envirCompileString {
 		var astr, bstr, opstr, str = "";
@@ -255,7 +262,7 @@
 	}
 }
 
-+UnaryOpPlug {
++ UnaryOpPlug {
 
 	envirCompileString {
 		^(a.envirCompileString ? "") ++  " "  ++ operator
@@ -267,7 +274,7 @@
 
 + ProxySpace {
 
-			// where am I globally accessible?
+	// where am I globally accessible?
 	asCode {
 		var key;
 		if (this == thisProcess.interpreter.p) { ^"p" };
@@ -289,24 +296,24 @@
 
 		hasGlobalClock = clock.isKindOf(TempoBusClock);
 
-		stream << "\n(\n"; // )
+		stream << "\n(\n";
 		if(hasGlobalClock) { stream <<< this.asCode << ".makeTempoClock(" << clock.tempo << ");\n\n"; };
 		// find keys for all parents
 		if(keys.notNil) {
 			proxies = IdentitySet.new;
-			keys.do { arg key; var p = envir[key]; p !? { p.getFamily(proxies) } };
-			keys = proxies.collect { arg item; item.key(envir) };
+			keys.do { |key| var p = envir[key]; p !? { p.getFamily(proxies) } };
+			keys = proxies.collect { |item| item.key(envir) };
 		} { keys = envir.keys };
 
 		if(hasGlobalClock) { keys.remove(\tempo) };
 
 		// add all objects to compilestring
-		keys.do { arg key;
+		keys.do { |key|
 			var proxy = envir.at(key);
 			stream << proxy.asCode(includeSettings, includeMonitors, this.envir) << "\n";
 		};
 
-		stream << /*(*/ ");\n";
+		stream << ");\n";
 	}
 
 	documentOutput {
@@ -316,82 +323,40 @@
 	document { | keys, onlyAudibleOutput = false, includeSettings = true |
 		var str;
 		if(onlyAudibleOutput) {
-			keys = this.monitors.collect { arg item; item.key(envir) };
+			keys = this.monitors.collect { |item| item.key(envir) };
 		};
-		str = String.streamContents { arg stream;
+		str = String.streamContents { |stream|
 			stream << "// ( p = ProxySpace.new(s).push; ) \n\n";
 			this.storeOn(stream, keys, includeSettings);
-//			this.do { arg px; if(px.monitorGroup.isPlaying) {
-//				stream << px.playEditString << ".play; \n"
-//				}
-//			};
+			//			this.do { |px| if(px.monitorGroup.isPlaying) {
+			//				stream << px.playEditString << ".play; \n"
+			//				}
+			//			};
 		};
-		^str.newTextWindow((name ? "proxyspace").asString)
+		// ^str.newTextWindow((name ? "proxyspace").asString)
+		^Document((name ? "proxyspace").asString, str);
 	}
 
 }
 
+
 + ProxyNodeMap {
 
-	storeOn { | stream, namestring = "", dropOut = false |
-		var strippedSetArgs, storedSetNArgs, rates, proxyMapKeys, proxyMapNKeys;
-		this.updateBundle;
-		if(dropOut) {
-			forBy(0, setArgs.size - 1, 2, { arg i;
-				var item;
-				item = setArgs[i];
-				if(item !== 'out' and: { item !== 'i_out' })
-				{
-					strippedSetArgs = strippedSetArgs.add(item);
-					strippedSetArgs = strippedSetArgs.add(setArgs[i+1]);
-				}
-			})
-		} { strippedSetArgs = setArgs };
-		if(strippedSetArgs.notNil) {
-			stream << namestring << ".set(" <<<* strippedSetArgs << ");" << Char.nl;
-		};
+	asCode { | namestring = "", dropOut = false |
+		^String.streamContents({ |stream|
+			var map;
+			if(dropOut) {
+				map = this.copy;
+				map.removeAt(\out);
+				map.removeAt(\i_out);
+			} { map = this };
 
-		if(mapArgs.notNil or: { mapnArgs.notNil }) {
-			settings.keysValuesDo { arg key, setting;
-				var proxy;
-				if(setting.isMapped) {
-					proxy = setting.value;
-					if(proxy.notNil) {
-						if(setting.isMultiChannel) {
-							proxyMapNKeys = proxyMapNKeys.add(key);
-							proxyMapNKeys = proxyMapNKeys.add(proxy);
-						}{
-							proxyMapKeys = proxyMapKeys.add(key);
-							proxyMapKeys = proxyMapKeys.add(proxy);
-						}
-					};
-				};
+			if(map.notEmpty) {
+				stream << namestring << ".set(" <<<* map.asKeyValuePairs << ");" << Char.nl;
 			};
-			if(proxyMapKeys.notNil) {
-				stream << namestring << ".map(" <<<* proxyMapKeys << ");" << Char.nl;
-			};
-			if(proxyMapNKeys.notNil) {
-				stream << namestring << ".mapn(" <<<* proxyMapNKeys << ");" << Char.nl;
-			};
-		};
-
-		if(setnArgs.notNil) {
-			storedSetNArgs = Array.new;
-			settings.keysValuesDo { arg key, setting;
-				if(setting.isMapped.not and: setting.isMultiChannel) {
-					storedSetNArgs = storedSetNArgs.add(key);
-					storedSetNArgs = storedSetNArgs.add(setting.value);
-				}
-			};
-			stream << namestring << ".setn(" <<<* storedSetNArgs << ");" << Char.nl;
-		};
-		settings.keysValuesDo { arg key, setting;
-			if(setting.rate.notNil) { rates = rates.add(key); rates = rates.add(setting.rate) };
-		};
-		if(rates.notNil) {
-			stream << namestring << ".setRates(" <<<* rates << ");" << Char.nl;
-		}
-
+			if(rates.notNil) {
+				stream << namestring << ".setRates(" <<<* rates << ");" << Char.nl;
+			}
+		});
 	}
-
 }

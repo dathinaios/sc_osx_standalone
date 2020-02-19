@@ -76,7 +76,7 @@ SequenceableCollection : Collection {
 	}
 
 	// fill with interpolation of values between start and end
-	 *interpolation { arg size, start=0.0, end=1.0;
+	*interpolation { arg size, start=0.0, end=1.0;
 		var obj = this.new(size), step;
 		if(size == 1) { ^obj.add(start) };
 		step = (end - start) / (size - 1);
@@ -84,7 +84,7 @@ SequenceableCollection : Collection {
 			obj.add(start + (i * step));
 		};
 		^obj
- 	}
+	}
 
 
 	++ { arg aSequenceableCollection;
@@ -140,7 +140,7 @@ SequenceableCollection : Collection {
 		var newColl;
 		var i = start;
 		newColl = this.species.new(end - start);
-		while ({ i < end },{
+		while ({ i <= end },{
 			newColl.add(this.at(i));
 			i = i + 1;
 		});
@@ -242,13 +242,42 @@ SequenceableCollection : Collection {
 		^((val - a) / div) + i - 1
 	}
 
+	selectIndices { | function |
+		^this.selectIndicesAs(function, this.species);
+	}
+	selectIndicesAs { | function, class |
+		var res = class.new(this.size);
+		this.do {|elem, i| if (function.value(elem, i)) { res.add(i) } }
+		^res;
+	}
+
+	rejectIndices { | function |
+		^this.rejectIndicesAs(function, this.species);
+	}
+	rejectIndicesAs { | function, class |
+		var res = class.new(this.size);
+		this.do {|elem, i| if (function.value(elem, i).not) { res.add(i) } }
+		^res;
+	}
+
+	isSeries { arg step;
+		if(this.size <= 1) { ^true };
+		this.doAdjacentPairs { |a, b|
+			var diff = b - a;
+			if(step.isNil) { step = diff } {
+				if(step != diff) { ^false }
+			}
+		};
+		^true
+	}
+
 	resamp0 { arg newSize;
-		var factor = this.size - 1 / (newSize - 1);
+		var factor = this.size - 1 / (newSize - 1).max(1);
 		^this.species.fill(newSize, { |i| this.at((i * factor).round(1.0).asInteger) })
 	}
 
 	resamp1 { arg newSize;
-		var factor = this.size - 1 / (newSize - 1);
+		var factor = this.size - 1 / (newSize - 1).max(1);
 		^this.species.fill(newSize, { |i| this.blendAt(i * factor) })
 	}
 
@@ -329,6 +358,7 @@ SequenceableCollection : Collection {
 		list = list.add(sublist);
 		^list
 	}
+
 	delimit { arg function;
 		var list, sublist;
 		list = Array.new;
@@ -377,13 +407,14 @@ SequenceableCollection : Collection {
 	curdle { arg probability;
 		^this.separate({ probability.coin });
 	}
+
 	flatten { arg numLevels=1;
 		var list;
 
 		if (numLevels <= 0, { ^this });
 		numLevels = numLevels - 1;
 
-		list = this.species.new;
+		list = this.species.new(this.size);
 		this.do({ arg item;
 			if (item.respondsTo('flatten'), {
 				list = list.addAll(item.flatten(numLevels));
@@ -392,6 +423,26 @@ SequenceableCollection : Collection {
 			});
 		});
 		^list
+	}
+
+	flatBelow { |level = 1|
+
+		if (level <=0) { ^this.flat };
+		level = level - 1;
+		^this.collect { |item|
+			if (item.respondsTo(\flatBelow)) {
+				item.flatBelow(level)
+			} {
+				item
+			}
+		}
+	}
+
+	// bidirectional flattening
+	flatten2 { arg numLevels=1;
+		if (numLevels == 0) { ^this };
+		if (numLevels > 0) { ^this.flatten(numLevels) };
+		^this.flatBelow(this.maxDepth - 1 + numLevels);
 	}
 
 	flat {
@@ -542,8 +593,8 @@ SequenceableCollection : Collection {
 	}
 
 	hammingDistance { |that|
-			// if this is shorter than that, size difference should be included
-			// (if this is longer, the do loop will take care of it)
+		// if this is shorter than that, size difference should be included
+		// (if this is longer, the do loop will take care of it)
 		var	count = (that.size - this.size).max(0);
 		this.do({ |elem, i|
 			if(elem != that[i]) { count = count + 1 };
@@ -643,6 +694,7 @@ SequenceableCollection : Collection {
 
 	isSequenceableCollection { ^true }
 	containsSeqColl { ^this.any(_.isSequenceableCollection) }
+	isAssociationArray { ^this.at(0).isKindOf(Association) }
 
 	// unary math ops
 	neg { ^this.performUnaryOp('neg') }
@@ -770,12 +822,199 @@ SequenceableCollection : Collection {
 	amclip { arg aNumber, adverb; ^this.performBinaryOp('amclip', aNumber, adverb) }
 	scaleneg { arg aNumber, adverb; ^this.performBinaryOp('scaleneg', aNumber, adverb) }
 	clip2 { arg aNumber=1, adverb; ^this.performBinaryOp('clip2', aNumber, adverb) }
-	fold2 { arg aNumber, adverb; ^this.performBinaryOp('fold2', aNumber, adverb) }
-	wrap2 { arg aNumber, adverb; ^this.performBinaryOp('wrap2', aNumber, adverb) }
-	excess { arg aNumber, adverb; ^this.performBinaryOp('excess', aNumber, adverb) }
+	fold2 { arg aNumber=1, adverb; ^this.performBinaryOp('fold2', aNumber, adverb) }
+	wrap2 { arg aNumber=1, adverb; ^this.performBinaryOp('wrap2', aNumber, adverb) }
+	excess { arg aNumber=1, adverb; ^this.performBinaryOp('excess', aNumber, adverb) }
 	firstArg { arg aNumber, adverb; ^this.performBinaryOp('firstArg', aNumber, adverb) }
 	rrand { arg aNumber, adverb; ^this.performBinaryOp('rrand', aNumber, adverb) }
 	exprand { arg aNumber, adverb; ^this.performBinaryOp('exprand', aNumber, adverb) }
+
+
+	/*  Boost Special Functions  */
+
+	//  Number Series:
+	bernouliB2n { ^this.performUnaryOp('bernouliB2n') }
+	tangentT2n { ^this.performUnaryOp('tangentT2n') }
+
+	//  Gamma:
+	tgamma { ^this.performUnaryOp('tgamma') }
+	tgamma1pm1 { ^this.performUnaryOp('tgamma1pm1') }
+	lgamma { ^this.performUnaryOp('lgamma') }
+	digamma { ^this.performUnaryOp('digamma') }
+	trigamma { ^this.performUnaryOp('trigamma') }
+	polygamma { |n, z| ^this.multiChannelPerform('polygamma', n, z) }
+	tgammaRatio { |a, b| ^this.multiChannelPerform('tgammaRatio', a, b) }
+	tgammaDeltaRatio { |a, delta| ^this.multiChannelPerform('tgammaDeltaRatio', a, delta) }
+	gammaP { |a, z| ^this.multiChannelPerform('gammaP', a, z) }
+	gammaQ { |a, z| ^this.multiChannelPerform('gammaQ', a, z) }
+	tgammaLower { |a, z| ^this.multiChannelPerform('tgammaLower', a, z) }
+	tgammaUpper { |a, z| ^this.multiChannelPerform('tgammaUpper', a, z) }
+	//  Incomplete Gamma Function Inverses
+	gammaPInv { |a, p| ^this.multiChannelPerform('gammaPInv', a, p) }
+	gammaQInv { |a, q| ^this.multiChannelPerform('gammaQInv', a, q) }
+	gammaPInvA { |x, p| ^this.multiChannelPerform('gammaPInvA', x, p) }
+	gammaQInvA { |x, q| ^this.multiChannelPerform('gammaQInvA', x, q) }
+	//  Derivatives of the Incomplete Gamma Function
+	gammaPDerivative { |a, x| ^this.multiChannelPerform('gammaPDerivative', a, x) }
+	gammaQDerivative { |a, x| ^this.gammaPDerivative(a, x).neg }
+
+	//	Factorials and Binomial Coefficients:
+	factorial { ^this.performUnaryOp('factorial') }
+	doubleFactorial { ^this.performUnaryOp('doubleFactorial') }
+	risingFactorial { |x, i| ^this.multiChannelPerform('risingFactorial', x, i) }
+	fallingFactorial { |x, i| ^this.multiChannelPerform('fallingFactorial', x, i) }
+	binomialCoefficient { |n, k| ^this.multiChannelPerform('binomialCoefficient', n, k) }
+
+	//  Beta functions:
+	beta { |a, b| ^this.multiChannelPerform('beta', a, b) }
+	//  Incomplete beta functions
+	ibeta { |... args| ^this.multiChannelPerform('ibeta', *args) }
+	ibetaC { |... args| ^this.multiChannelPerform('ibetaC', *args) }
+	betaFull { |... args| ^this.multiChannelPerform('betaFull', *args) }
+	betaFullC { |... args| ^this.multiChannelPerform('betaFullC', *args) }
+	//  Incomplete beta function inverses
+	ibetaInv { |... args| ^this.multiChannelPerform('ibetaInv', *args) }
+	ibetaCInv { |... args| ^this.multiChannelPerform('ibetaCInv', *args) }
+	ibetaInvA { |... args| ^this.multiChannelPerform('ibetaInvA', *args) }
+	ibetaCInvA { |... args| ^this.multiChannelPerform('ibetaCInvA', *args) }
+	ibetaInvB { |... args| ^this.multiChannelPerform('ibetaInvB', *args) }
+	ibetaCInvB { |... args| ^this.multiChannelPerform('ibetaCInvB', *args) }
+	//  Incomplete beta function derivative
+	ibetaDerivative { |... args| ^this.multiChannelPerform('ibetaDerivative', *args) }
+
+	//  Error functions:
+	erf { ^this.performUnaryOp('erf') }
+	erfC { ^this.performUnaryOp('erfC') }
+	erfInv { ^this.performUnaryOp('erfInv') }
+	erfCInv { ^this.performUnaryOp('erfCInv') }
+
+	//  Polynomials:
+	// Legendre (and Associated), Laguerre (and Associated),
+	// Hermite, Chebyshev Polynomials (first & second kind, derivative, zero (root) finder)
+	// See boost documentation regarding the Condon-Shortley phase term of (-1)^m
+	// "http://www.boost.org/doc/libs/1_65_1/libs/math/doc/html/math_toolkit/sf_poly/legendre.html"]
+	legendreP { |n, x| ^this.multiChannelPerform('legendreP', n, x) }
+	legendrePPrime { |n, x| ^this.multiChannelPerform('legendrePPrime', n, x) }
+	legendrePZeros { ^this.performUnaryOp('legendrePZeros') }
+	legendrePAssoc { |... args| ^this.multiChannelPerform('legendrePAssoc', *args) }
+	legendreQ { |n, x| ^this.multiChannelPerform('legendreQ', n, x) }
+	laguerre { |n, x| ^this.multiChannelPerform('laguerre', n, x) }
+	laguerreAssoc { |... args| ^this.multiChannelPerform('laguerreAssoc', *args) }
+	hermite { |n, x| ^this.multiChannelPerform('hermite', n, x) }
+	chebyshevT { |n, x| ^this.multiChannelPerform('chebyshevT', n, x) }
+	chebyshevU { |n, x| ^this.multiChannelPerform('chebyshevU', n, x) }
+	chebyshevTPrime { |n, x| ^this.multiChannelPerform('chebyshevTPrime', n, x) }
+	//  "https://en.wikipedia.org/wiki/Chebyshev_polynomials#Roots_and_extrema"
+	//  "http://mathworld.wolfram.com/ChebyshevPolynomialoftheFirstKind.html"
+	chebyshevTZeros {
+		var n = this.asInt;
+		^(1..n).collect({ arg k;
+			cos(pi* ((2*k) - 1) / (2*n))
+		});
+	}
+
+	//  Spherical Harmonics:
+	sphericalHarmonic { |... args| ^this.multiChannelPerform('sphericalHarmonic', *args) }
+	sphericalHarmonicR { |... args| ^this.multiChannelPerform('sphericalHarmonicR', *args) }
+	sphericalHarmonicI { |... args| ^this.multiChannelPerform('sphericalHarmonicI', *args) }
+
+	//	Bessel Functions:
+	//  First and second kind, zero finders, modified first and second kinds,
+	//  spherical first and second kinds, derivatives
+	cylBesselJ { |v, x| ^this.multiChannelPerform('cylBesselJ', v, x) }
+	cylNeumann { |v, x| ^this.multiChannelPerform('cylNeumann', v, x) }
+	cylBesselJZero { |v, index| ^this.multiChannelPerform('cylBesselJZero', v, index) }
+	cylNeumannZero { |v, index| ^this.multiChannelPerform('cylNeumannZero', v, index) }
+	cylBesselI { |v, x| ^this.multiChannelPerform('cylBesselI', v, x) }
+	cylBesselK { |v, x| ^this.multiChannelPerform('cylBesselK', v, x) }
+	sphBessel { |v, x| ^this.multiChannelPerform('sphBessel', v, x) }
+	sphNeumann { |v, x| ^this.multiChannelPerform('sphNeumann', v, x) }
+	cylBesselJPrime { |v, x| ^this.multiChannelPerform('cylBesselJPrime', v, x) }
+	cylNeumannPrime { |v, x| ^this.multiChannelPerform('cylNeumannPrime', v, x) }
+	cylBesselIPrime { |v, x| ^this.multiChannelPerform('cylBesselIPrime', v, x) }
+	cylBesselKPrime { |v, x| ^this.multiChannelPerform('cylBesselKPrime', v, x) }
+	sphBesselPrime { |v, x| ^this.multiChannelPerform('sphBesselPrime', v, x) }
+	sphNeumannPrime { |v, x| ^this.multiChannelPerform('sphNeumannPrime', v, x) }
+
+	//  Hankel Functions:
+	cylHankel1 { |v, x| ^this.multiChannelPerform('cylHankel1', v, x) }
+	cylHankel2 { |v, x| ^this.multiChannelPerform('cylHankel2', v, x) }
+	sphHankel1 { |v, x| ^this.multiChannelPerform('sphHankel1', v, x) }
+	sphHankel2 { |v, x| ^this.multiChannelPerform('sphHankel2', v, x) }
+
+	//  Airy Functions:
+	airyAi { ^this.performUnaryOp('airyAi') }
+	airyBi { ^this.performUnaryOp('airyBi') }
+	airyAiPrime { ^this.performUnaryOp('airyAiPrime') }
+	airyBiPrime { ^this.performUnaryOp('airyBiPrime') }
+	airyAiZero { ^this.performUnaryOp('airyAiZero') }
+	airyBiZero { ^this.performUnaryOp('airyBiZero') }
+
+	//  Elliptic Integrals:
+	//  Carlson Form
+	ellintRf { |... args| ^this.multiChannelPerform('ellintRf', *args) }
+	ellintRd { |... args| ^this.multiChannelPerform('ellintRd', *args) }
+	ellintRj { |... args| ^this.multiChannelPerform('ellintRj', *args) }
+	ellintRc { |x, y| ^this.multiChannelPerform('ellintRc', x, y) }
+	ellintRg { |... args| ^this.multiChannelPerform('ellintRg', *args) }
+	//  Legendre Form - First, Second, Third Kind, D
+	ellint1 { |k, phi| ^this.multiChannelPerform('ellint1', k, phi) }
+	ellint1C { ^this.performUnaryOp('ellint1C') }
+	ellint2 { |k, phi| ^this.multiChannelPerform('ellint2', k, phi) }
+	ellint2C { ^this.performUnaryOp('ellint2C') }
+	ellint3 { |... args| ^this.multiChannelPerform('ellint3', *args) }
+	ellint3C { |k, n| ^this.multiChannelPerform('ellint3C', k, n) }
+	ellintD { |k, phi| ^this.multiChannelPerform('ellintD', k, phi) }
+	ellintDC { ^this.performUnaryOp('ellintDC') }
+	//  Jacobi Zeta, Heuman Lambda Functions
+	jacobiZeta { |k, phi| ^this.multiChannelPerform('jacobiZeta', k, phi) }
+	heumanLambda { |k, phi| ^this.multiChannelPerform('heumanLambda', k, phi) }
+
+	//  Jacobi Elliptic Functions:
+	jacobiCd { |k, u| ^this.multiChannelPerform('jacobiCd', k, u) }
+	jacobiCn { |k, u| ^this.multiChannelPerform('jacobiCn', k, u) }
+	jacobiCs { |k, u| ^this.multiChannelPerform('jacobiCs', k, u) }
+	jacobiDc { |k, u| ^this.multiChannelPerform('jacobiDc', k, u) }
+	jacobiDn { |k, u| ^this.multiChannelPerform('jacobiDn', k, u) }
+	jacobiDs { |k, u| ^this.multiChannelPerform('jacobiDs', k, u) }
+	jacobiNc { |k, u| ^this.multiChannelPerform('jacobiNc', k, u) }
+	jacobiNd { |k, u| ^this.multiChannelPerform('jacobiNd', k, u) }
+	jacobiNs { |k, u| ^this.multiChannelPerform('jacobiNs', k, u) }
+	jacobiSc { |k, u| ^this.multiChannelPerform('jacobiSc', k, u) }
+	jacobiSd { |k, u| ^this.multiChannelPerform('jacobiSd', k, u) }
+	jacobiSn { |k, u| ^this.multiChannelPerform('jacobiSn', k, u) }
+
+	//  Riemann Zeta Function:
+	zeta { ^this.performUnaryOp('zeta') }
+
+	//  Exponential Integrals:
+	expintEn { |n, z| ^this.multiChannelPerform('expintEn', n, z) }
+	expintEi { ^this.performUnaryOp('expintEi') }
+
+	//  Basic Functions:
+	sinPi { ^this.performUnaryOp('sinPi') }
+	cosPi { ^this.performUnaryOp('cosPi') }
+	log1p { ^this.performUnaryOp('log1p') }
+	expm1 { ^this.performUnaryOp('expm1') }
+	cbrt { ^this.performUnaryOp('cbrt') }
+	sqrt1pm1 { ^this.performUnaryOp('sqrt1pm1') }
+	powm1 { |x, y| ^this.multiChannelPerform('powm1', x, y) }
+	// hypot not needed... slightly slower than current implementation of hypot
+
+	//  Sinus Cardinal ("sinc") and Hyperbolic Sinus Cardinal Functions:
+	sincPi { ^this.performUnaryOp('sincPi') }
+	sinhcPi { ^this.performUnaryOp('sinhcPi') }
+
+	//  Inverse Hyperbolic Functions:
+	asinh { ^this.performUnaryOp('asinh') }
+	acosh { ^this.performUnaryOp('acosh') }
+	atanh { ^this.performUnaryOp('atanh') }
+
+	//	Owen's T function:
+	owensT { |h, a| ^this.multiChannelPerform('owensT', h, a) }
+
+	/*  end Boost Special Functions  */
+
 
 	// math op dispatch support
 	performUnaryOp { arg aSelector;
@@ -783,8 +1022,9 @@ SequenceableCollection : Collection {
 	}
 
 	performBinaryOp { arg aSelector, theOperand, adverb;
- 		^theOperand.performBinaryOpOnSeqColl(aSelector, this, adverb);
+		^theOperand.performBinaryOpOnSeqColl(aSelector, this, adverb);
 	}
+
 	performBinaryOpOnSeqColl { arg aSelector, theOperand, adverb;
 		var size, newList;
 		if (adverb == nil) {
@@ -812,12 +1052,12 @@ SequenceableCollection : Collection {
 			}
 		};
 		if (adverb == 't') {
-//			size = this.size;
-//			newList = this.species.new(size);
-//			size.do({ arg i;
-//				newList.add(theOperand.perform(aSelector, this.at(i)));
-//			});
-//			^newList
+			//			size = this.size;
+			//			newList = this.species.new(size);
+			//			size.do({ arg i;
+			//				newList.add(theOperand.perform(aSelector, this.at(i)));
+			//			});
+			//			^newList
 			size = theOperand.size;
 			newList = this.species.new(size);
 			size.do({ arg i;
@@ -826,12 +1066,12 @@ SequenceableCollection : Collection {
 			^newList
 		};
 		if (adverb == 'x') {
-//			size = this.size;
-//			newList = this.species.new(size);
-//			size.do({ arg i;
-//				newList.add(theOperand.perform(aSelector, this.at(i)));
-//			});
-//			^newList
+			//			size = this.size;
+			//			newList = this.species.new(size);
+			//			size.do({ arg i;
+			//				newList.add(theOperand.perform(aSelector, this.at(i)));
+			//			});
+			//			^newList
 			size = theOperand.size * this.size;
 			newList = this.species.new(size);
 			theOperand.do({ arg a;
@@ -884,8 +1124,8 @@ SequenceableCollection : Collection {
 
 	rate {
 		var rate, rates;
-		if(this.size == 1, { ^this.first.rate });
-		^this.collect({ arg item; item.rate }).minItem;
+		if(this.size == 1) { ^this.first.rate };
+		^this.collect({ arg item; item.rate ? 'scalar' }).minItem
 		// 'scalar' > 'control' > 'audio'
 	}
 
@@ -918,8 +1158,10 @@ SequenceableCollection : Collection {
 	curvelin { arg ... args; ^this.multiChannelPerform('curvelin', *args) }
 	bilin { arg ... args; ^this.multiChannelPerform('bilin', *args) }
 	biexp { arg ... args; ^this.multiChannelPerform('biexp', *args) }
+	moddif { arg ... args; ^this.multiChannelPerform('moddif', *args) }
 	range { arg ... args; ^this.multiChannelPerform('range', *args) }
 	exprange { arg ... args; ^this.multiChannelPerform('exprange', *args) }
+	curverange { arg ... args; ^this.multiChannelPerform('curverange', *args) }
 	unipolar { arg ... args; ^this.multiChannelPerform('unipolar', *args) }
 	bipolar { arg ... args; ^this.multiChannelPerform('bipolar', *args) }
 	lag { arg ... args; ^this.multiChannelPerform('lag', *args) }
@@ -995,9 +1237,9 @@ SequenceableCollection : Collection {
 		dj = this.at(j);
 		if (function.value(di, dj).not, { // i.e., should di precede dj?
 			this.swap(i,j);
-				 tt = di;
-				 di = dj;
-				 dj = tt;
+			tt = di;
+			di = dj;
+			dj = tt;
 		});
 		if ( n > 2, { // More than two elements.
 			ij = (i + j) div: 2;  // ij is the midpoint of i and j.
@@ -1017,20 +1259,20 @@ SequenceableCollection : Collection {
 				k = i;
 				l = j;
 				while ({
-				 	while ({
-				 		l = l - 1;
-				 		k <= l and: { function.value(dij, this.at(l)) }
-				 	}); // i.e. while dl succeeds dij
-				 	while ({
-				 		k = k + 1;
-				 		k <= l and: { function.value(this.at(k), dij) };
-				 	}); // i.e. while dij succeeds dk
-				 	k <= l
+					while ({
+						l = l - 1;
+						k <= l and: { function.value(dij, this.at(l)) }
+					}); // i.e. while dl succeeds dij
+					while ({
+						k = k + 1;
+						k <= l and: { function.value(this.at(k), dij) };
+					}); // i.e. while dij succeeds dk
+					k <= l
 				},{
 					this.swap(k, l);
 				});
-		// Now l<k (either 1 or 2 less), and di through dl are all less than or equal to dk
-		// through dj.  Sort those two segments.
+				// Now l<k (either 1 or 2 less), and di through dl are all less than or equal to dk
+				// through dj.  Sort those two segments.
 				this.quickSortRange(i, l, function);
 				this.quickSortRange(k, j, function);
 			});
@@ -1121,7 +1363,7 @@ SequenceableCollection : Collection {
 		if(this.isEmpty) { ^nil };
 		^if(this.size.even, {
 			[this.hoareFind(this.size/ 2 - 1, function),
-			 this.hoareFind(this.size/ 2,     function)].mean;
+				this.hoareFind(this.size/ 2,     function)].mean;
 		}, {
 			this.hoareFind(this.size - 1 / 2, function);
 		});
@@ -1211,15 +1453,15 @@ SequenceableCollection : Collection {
 		index = index % this.size;
 		^this.put(index, value)
 	}
-	reduce { arg operator;
+	reduce { arg operator, adverb;
 		var once = true, result;
 		if(this.size==1){ ^this[0] };
 		this.doAdjacentPairs {|a, b|
 			if (once) {
 				once = false;
-				result = operator.applyTo(a, b);
+				result = operator.applyTo(a, b, adverb);
 			}{
-				result =  operator.applyTo(result, b);
+				result =  operator.applyTo(result, b, adverb);
 			};
 		};
 		^result
@@ -1248,24 +1490,66 @@ SequenceableCollection : Collection {
 	// we break up the array so that missing elements are set to nil in the Quant
 	asQuant { ^Quant(*this) }
 
-//	asUGenInput { ^this.asArray.asUGenInput }
+	//	asUGenInput { ^this.asArray.asUGenInput }
+
+	// this method could be refactored by dispatching, but we're trying to keep the overhead low.
 
 	schedBundleArrayOnClock { |clock, bundleArray, lag = 0, server, latency|
+
+		// "this" is an array of delta times for the clock (usually in beats)
+		// "lag" is a value or an array of tempo independent absolute lag times (in seconds)
+
+		var sendBundle;
+
 		latency = latency ? server.latency;
+		sendBundle = { |i| server.sendBundle(latency, bundleArray.wrapAt(i)) };
+
 		if (lag != 0) {
 			lag = lag.asArray;
-			this.do { |time, i|
-				clock.sched(time, {
-						SystemClock.sched(lag.wrapAt(i), {
-							server.sendBundle(latency, bundleArray.wrapAt(i)) })
-				})
+
+			this.do { |delta, i|
+				if(delta != 0) {
+					// schedule on both clocks
+					clock.sched(delta, {
+						SystemClock.sched(lag.wrapAt(i), { sendBundle.value(i) })
+					})
+				} {
+					// schedule only on the system clock
+					SystemClock.sched(lag.wrapAt(i), { sendBundle.value(i) })
+				}
 			}
 		} {
-			this.do { |time, i|
-				clock.sched(time, {
-						server.sendBundle(latency, bundleArray.wrapAt(i))
-				})
+			this.do { |delta, i|
+				if(delta != 0) {
+					// schedule only on the clock passed in
+					clock.sched(delta, { sendBundle.value(i) })
+				} {
+					// send directly
+					sendBundle.value(i)
+				}
 			}
 		}
+	}
+
+	unixCmd { arg action, postOutput = true;
+		var pid;
+		if(this.notEmpty) {
+			pid = this.prUnixCmd(postOutput);
+			if(action.notNil) {
+				String.unixCmdActions.put(pid, action);
+			};
+			^pid
+		} {
+			Error("Collection should have at least the filepath of the program to run.").throw
+		}
+	}
+
+	prUnixCmd { arg postOutput = true;
+		_ArrayPOpen
+		^this.primitiveFailed
+	}
+
+	sanitize { arg ... args;
+		^this.multiChannelPerform(\sanitize, *args);
 	}
 }

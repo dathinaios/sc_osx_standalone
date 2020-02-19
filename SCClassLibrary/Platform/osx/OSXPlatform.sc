@@ -1,13 +1,11 @@
-OSXPlatform : UnixPlatform
-{
-	var <>preferencesAction;
+OSXPlatform : UnixPlatform {
+	var <>preferencesAction; // Warning: scapp only
 	var <>sleepAction, <>wakeAction, <>isSleeping=false;
 
 	initPlatform {
 		super.initPlatform;
 		recordingsDir = "~/Music/SuperCollider Recordings".standardizePath;
 		this.declareFeature(\unixPipes); // pipes are possible (can't declare in UnixPlatform since IPhonePlatform is unixy yet can't support pipes)
-		if (Platform.ideName == "scapp") { this.setDeferredTaskInterval(1/60); }
 	}
 
 	name { ^\osx }
@@ -20,7 +18,7 @@ OSXPlatform : UnixPlatform
 	}
 
 	startup {
-		Server.program = "exec %/scsynth".format(String.scDir.shellQuote);
+		Server.program = "exec %/scsynth".format((String.scDir +/+ "../Resources").shellQuote);
 
 		Score.program = Server.program;
 
@@ -35,17 +33,12 @@ OSXPlatform : UnixPlatform
 		};
 	}
 	shutdown {
-		HIDDeviceService.releaseDeviceList;
 		if(Platform.ideName == "scapp"){
 			CocoaMenuItem.clearCustomItems;
 		};
 	}
 
-	// Prefer qt but fall back to cocoa if qt not installed.
-	defaultGUIScheme { if (GUI.get(\qt).notNil) {^\qt} {^\cocoa} }
-	defaultHIDScheme { ^\osx_hid }
-
-	setDeferredTaskInterval { |interval| _SetDeferredTaskInterval }
+	defaultGUIScheme { ^\qt }
 
 	findHelpFile { | string |
 		^string.findHelpFile;

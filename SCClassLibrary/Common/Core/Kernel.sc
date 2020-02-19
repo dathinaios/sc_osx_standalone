@@ -48,8 +48,10 @@ Class {
 		});
 	}
 
-	*allClasses { _AllClasses }
-
+	*allClasses {
+		_AllClasses
+		^this.primitiveFailed
+	}
 	findMethod { arg methodName;
 		if ( methods.notNil, {
 			^methods.detect({ arg method; method.name == methodName });
@@ -84,7 +86,10 @@ Class {
 		if (meth.notNil, { meth.dumpByteCodes },{ Post << methodName << " not found.\n"; });
 	}
 
-	dumpClassSubtree { _DumpClassSubtree }
+	dumpClassSubtree {
+		 _DumpClassSubtree
+		^this.primitiveFailed
+	}
 	dumpInterface {
 		// show all methods and their arguments defined for this class
 		// does not include methods defined in superclasses
@@ -141,7 +146,7 @@ Class {
 	//traceAnyPathToAllInstancesOf { _TraceAnyPathToAllInstancesOf }
 
 	openCodeFile {
-		this.filenameSymbol.asString.openTextFile(this.charPos, -1);
+		this.filenameSymbol.asString.openDocument(this.charPos, -1);
 	}
 	classVars {
 		var start, end;
@@ -191,7 +196,7 @@ Process {
 		Class.initClassTree(AppClock); // AppClock first in case of error
 		time = this.class.elapsedTime;
 		Class.initClassTree(Object);
-		("Class tree inited in" + (this.class.elapsedTime - time).round(0.01) + "seconds").inform;
+		("Class tree inited in" + (this.class.elapsedTime - time).round(0.01) + "seconds").postln;
 		Class.classesInited = nil;
 
 		topEnvironment = Environment.new;
@@ -224,8 +229,14 @@ Process {
 		^AppClock.tick;
 	}
 
-	*tailCallOptimize { _GetTailCallOptimize }
-	*tailCallOptimize_ { arg bool; _SetTailCallOptimize ^this.primitiveFailed }
+	*tailCallOptimize {
+		_GetTailCallOptimize
+		^this.primitiveFailed
+	}
+	*tailCallOptimize_ { arg bool;
+		_SetTailCallOptimize
+		^this.primitiveFailed
+	}
 
 	getCurrentSelection {
 		var qt = \QtGUI.asClass;
@@ -246,14 +257,14 @@ Process {
 			if (class.notNil, {
 				method = class.findMethod(words.at(1).asSymbol);
 				if (method.notNil, {
-					method.filenameSymbol.asString.openTextFile(method.charPos, -1);
+					method.filenameSymbol.asString.openDocument(method.charPos, -1);
 				});
 			});
 		},{
 			class = string.asSymbol.asClass;
 			if (class.notNil, {
 				class = class.classRedirect;
-				class.filenameSymbol.asString.openTextFile(class.charPos, -1);
+				class.filenameSymbol.asString.openDocument(class.charPos, -1);
 			});
 		});
 	}
@@ -381,7 +392,15 @@ Process {
 
 	shallowCopy { ^this }
 
-	*elapsedTime { _ElapsedTime }
+	*elapsedTime {
+		_ElapsedTime
+		^this.primitiveFailed
+	}
+
+	*monotonicClockTime {
+		_monotonicClockTime
+		^this.primitiveFailed
+	}
 
 	storeOn { arg stream;
 		stream << "thisProcess";
@@ -400,12 +419,26 @@ FunctionDef {
 	// When you use a FunctionDef in your code it gets pushed on the stack
 	// as an instance of Function
 
-	dumpByteCodes { _DumpByteCodes }
+	dumpByteCodes {
+		_DumpByteCodes
+		^this.primitiveFailed
+	}
 
-	numArgs { _FunDef_NumArgs }		// return number of arguments to the function
-	numVars { _FunDef_NumVars }		// return number of variables in the function
-	varArgs { _FunDef_VarArgs }		// return boolean whether function has ellipsis argument
-
+	numArgs {
+		// return number of arguments to the function
+		_FunDef_NumArgs
+		^this.primitiveFailed
+	}
+	numVars {
+		// return number of variables in the function
+		_FunDef_NumVars
+		^this.primitiveFailed
+	}
+	varArgs {
+		// return boolean whether function has ellipsis argument
+		_FunDef_VarArgs
+		^this.primitiveFailed
+	}
 	shallowCopy { ^this }
 
 	asFunction {
@@ -416,6 +449,7 @@ FunctionDef {
 
 	dumpContexts {
 		_FunctionDefDumpContexts
+		^this.primitiveFailed
 	}
 	inspectorClass { ^FunctionDefInspector }
 
@@ -439,26 +473,30 @@ FunctionDef {
 	archiveAsCompileString { ^true }
 
 	argumentString { arg withDefaultValues=true;
-		var res, last;
-		if(argNames.isNil) { ^nil };
-		res = "";
-		last = argNames.size-1;
-		argNames.do { |name, i|
+		var res = "", pairs = this.keyValuePairsFromArgs;
+		var last;
+		if(pairs.isEmpty) { ^nil };
+		last = pairs.lastIndex;
+		pairs.pairsDo { |name, defaultValue, i|
 			var value;
 			res = res ++ name;
-			if(withDefaultValues and: { value = prototypeFrame[i]; value.notNil }) {
-				res = res ++ " = " ++ value.asCompileString
+			if(withDefaultValues and: { defaultValue.notNil }) {
+				res = res ++ " = " ++ defaultValue.asCompileString
 			};
-			if(i != last) { res = res ++ ", " };
+			if(i + 1 != last) { res = res ++ ", " };
 		}
 		^res
 	}
 
+	keyValuePairsFromArgs {
+		var values;
+		if(argNames.isNil) { ^[] };
+		values = this.prototypeFrame.keep(argNames.size);
+		^[argNames, values].flop.flatten
+	}
+
 	makeEnvirFromArgs {
-		var argNames, argVals;
-		argNames = this.argNames;
-		argVals = this.prototypeFrame.keep(argNames.size);
-		^().putPairs([argNames, argVals].flop.flatten)
+		^().putPairs(this.keyValuePairsFromArgs)
 	}
 
 }
@@ -468,7 +506,7 @@ Method : FunctionDef {
 	var <filenameSymbol, <charPos;
 
 	openCodeFile {
-		this.filenameSymbol.asString.openTextFile(this.charPos, -1);
+		this.filenameSymbol.asString.openDocument(this.charPos, -1);
 	}
 	hasHelpFile {
 		//should cache this in Library or classvar
@@ -499,6 +537,15 @@ Method : FunctionDef {
 		functionRefs.notNil.if({references = references.add(this)});
 		^references
 	}
+
+	keyValuePairsFromArgs {
+		var names, values;
+		if(argNames.isNil, { ^[] });
+		names = argNames.drop(1); // first argName is "this"
+		values = this.prototypeFrame.drop(1).keep(names.size);
+		^[names, values].flop.flatten
+	}
+
 }
 
 Frame {
@@ -553,20 +600,20 @@ Interpreter {
 	}
 
 	interpretPrintCmdLine {
-		var res, func, code = cmdLine, doc = Document.current, ideClass = \ScIDE.asClass;
+		var res, func, code = cmdLine, doc, ideClass = \ScIDE.asClass;
 		preProcessor !? { cmdLine = preProcessor.value(cmdLine, this) };
 		func = this.compile(cmdLine);
 		if (ideClass.notNil) {
 			thisProcess.nowExecutingPath = ideClass.currentPath
 		} {
-			if(doc.tryPerform(\dataptr).notNil) {
+			if(\Document.asClass.notNil and: {(doc = Document.current).tryPerform(\dataptr).notNil}) {
 				thisProcess.nowExecutingPath = doc.tryPerform(\path);
 			}
 		};
 		res = func.value;
 		thisProcess.nowExecutingPath = nil;
 		codeDump.value(code, res, func, this);
-		res.postln;
+		("-> " ++ res).postln;
 	}
 
 	interpret { arg string ... args;
@@ -612,12 +659,13 @@ Interpreter {
 	compileFile { arg pathName;
 		var file, text;
 		file = File.new(pathName, "r");
-		if (file.isNil, {
+		if (file.isOpen.not, {
 			error("file open failed\n");
 			^nil
 		});
 		text = file.readAllString;
 		file.close;
+		preProcessor !? { text = preProcessor.value(text, this) };
 		if (text.beginsWith("#!"), {
 			// comment out shebang to preserve line count
 			text.overWrite("//");

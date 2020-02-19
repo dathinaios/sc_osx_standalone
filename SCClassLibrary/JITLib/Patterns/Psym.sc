@@ -4,11 +4,13 @@ Psym : FilterPattern {
 	*new { arg pattern, dict;
 		^super.new(pattern).dict_(dict)
 	}
+
 	storeArgs { ^[pattern,dict] }
 
 	lookupClass { ^Pdef }
+
 	lookUp { arg key;
-		^(dict ?? { this.lookupClass.all }).at(key) ?? { this.lookupClass.default }
+		^(dict ?? { this.lookupClass.all }).at(key.asSymbol) ?? { this.lookupClass.default }
 	}
 
 	embedInStream { arg inval;
@@ -18,7 +20,6 @@ Psym : FilterPattern {
 			outval = str.next(inval);
 			outval.notNil
 		} {
-
 			pat = this.getPattern(outval);
 			inval = pat.embedInStream(inval);
 		};
@@ -30,15 +31,13 @@ Psym : FilterPattern {
 		^if(key.isSequenceableCollection) {
 			this.lookupClass.parallelise(
 				key.collect {|each|
-					this.lookUp(each.asSymbol)
+					this.lookUp(each)
 				}
 			);
 		} {
-			this.lookUp(key.asSymbol)
-		};
+			this.lookUp(key)
+		}
 	}
-
-
 
 }
 
@@ -46,19 +45,20 @@ Pnsym : Psym {
 	lookupClass { ^Pdefn }
 }
 
-
 Ptsym : Psym {
 	var <>quant, <>dur, <>tolerance;
 
 	*new { arg pattern, dict, quant, dur, tolerance = 0.001;
 		^super.newCopyArgs(pattern, dict, quant, dur, tolerance)
 	}
+
 	storeArgs { ^[ pattern, dict, quant, dur, tolerance ] }
+
 	embedInStream { arg inval;
-		var str, outval, pat, quantVal, quantStr, durVal, durStr;
-		str = pattern.asStream;
-		quantStr = quant.asStream;
-		durStr = dur.asStream;
+		var outval, pat, quantVal, durVal;
+		var str = pattern.asStream;
+		var quantStr = quant.asStream;
+		var durStr = dur.asStream;
 
 		while {
 			outval = str.next(inval);
@@ -75,10 +75,13 @@ Ptsym : Psym {
 }
 
 Pnsym1 : Pnsym {
+
 	embedInStream { arg inval;
-		var str, which, streams, outval, pat, currentStream;
-		str = pattern.asStream;
-		streams = IdentityDictionary.new;
+
+		var which, outval, pat, currentStream;
+		var str = pattern.asStream;
+		var streams = IdentityDictionary.new;
+
 		while {
 			which = str.next(inval);
 			which.notNil
@@ -99,17 +102,22 @@ Pnsym1 : Pnsym {
 }
 
 Psym1 : Psym {
-	embedInStream { arg inval, cleanup;
-		var str, which, streams, outval, pat, currentStream;
-		str = pattern.asStream;
-		streams = IdentityDictionary.new;
-		cleanup ?? { cleanup = EventStreamCleanup.new };
+
+	embedInStream { arg inval;
+
+		var which, outval, pat, currentStream;
+		var str = pattern.asStream;
+		var streams = IdentityDictionary.new;
+		var cleanup = EventStreamCleanup.new;
 
 		while {
 			which = str.next(inval);
 			which.notNil
 		} {
-			pat = this.getPattern(which);
+			if(which.isSequenceableCollection) {
+				Error("Psym1 cannot embed arrayed keys: %\n".format(which)).throw;
+			};
+			pat = this.lookUp(which);
 			currentStream = streams.at(pat);
 			if(currentStream.isNil) {
 				currentStream = pat.asStream;

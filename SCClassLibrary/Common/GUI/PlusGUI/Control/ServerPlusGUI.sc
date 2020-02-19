@@ -13,7 +13,7 @@
 
 	calculateViewBounds {
 		var width = 288, height = 98, taskBarHeight = 27; // the latter should be in SCWindow
-		var keys = set.asArray.collect(_.name).sort;
+		var keys = all.asArray.collect(_.name).sort;
 		^Rect(5, keys.indexOf(name) * (height + taskBarHeight) + 5, width, height)
 	}
 
@@ -21,7 +21,7 @@
 		var active, booter, killer, makeDefault, running, booting, stopped, bundling, showDefault;
 		var startDump, stopDump, blockAliveThread, dumping = false;
 		var recorder, scoper;
-		var countsViews, ctlr;
+		var countsViews, serverController, serverStatusController;
 		var label, gui, font, volumeNum;
 		var buttonColor, faintGreen, faintRed;
 
@@ -52,7 +52,7 @@
 			booter.canFocus = false;
 			booter.font = font;
 			booter.states = [["Boot"],
-						     ["Quit", nil, faintGreen]];
+				["Quit", nil, faintGreen]];
 
 			booter.action = { arg view;
 				if(view.value == 1, {
@@ -63,7 +63,7 @@
 					this.quit;
 				});
 			};
-			booter.setProperty(\value,serverRunning.binaryValue);
+			booter.setProperty(\value, this.serverRunning.binaryValue);
 
 			killer = gui.button.new(w, Rect(0,0, 20, 18));
 			killer.states = [["K"]];
@@ -76,7 +76,7 @@
 		active.string = this.name.asString;
 		active.align = \center;
 		active.font = Font.sansSerif( 12 ).boldVariant;
-		if(serverRunning,running,stopped);
+		if(this.serverRunning, running, stopped);
 
 		makeDefault = gui.button.new(w, Rect(0,0, 54, 18));
 		makeDefault.font = font;
@@ -109,21 +109,21 @@
 				{char === $n } { this.queryAllNodes(false) }
 				{char === $N } { this.queryAllNodes(true) }
 				{char === $l } { this.tryPerform(\meter) }
-				{char === $p}  { if(serverRunning) { this.plotTree } }
-				{char === $ }  { if(serverRunning.not) { this.boot } }
+				{char === $p}  { if(this.serverRunning) { this.plotTree } }
+				{char === $ }  { if(this.serverRunning.not) { this.boot } }
 				{char === $s } { if( (this.isLocal and: (GUI.id == \qt)) or: ( this.inProcess ))
-					                 {this.scope(options.numOutputBusChannels)}
-					                 {warn("Scope not supported")}
-				               }
+					{this.scope(options.numOutputBusChannels)}
+					{warn("Scope not supported")}
+				}
 				{char === $f } { if( (this.isLocal and: (GUI.id == \qt)) or: ( this.inProcess ))
-					                 {this.freqscope}
-					                 {warn("FreqScope not supported")}
-				               }
+					{this.freqscope}
+					{warn("FreqScope not supported")}
+				}
 				{char == $d } {
 					if(this.isLocal or: { this.inProcess }) {
 						if(dumping, stopDump, startDump)
 					} {
-						"cannot dump a remote server's messages".inform
+						"cannot dump a remote server's messages".postln
 					}
 				}
 				{char === $m } { if(this.volume.isMuted) { this.unmute } { this.mute } }
@@ -171,7 +171,7 @@
 			};
 			stopDump = {
 				this.dumpOSC(0);
-				if(serverRunning) { this.startAliveThread };
+				if(this.serverRunning) { this.startAliveThread };
 				dumping = false;
 				w.name = label;
 				CmdPeriod.remove(blockAliveThread);
@@ -179,7 +179,8 @@
 
 			w.onClose = {
 				window = nil;
-				ctlr.remove;
+				serverController.remove;
+				serverStatusController.remove;
 			};
 
 		} {
@@ -207,7 +208,8 @@
 				// but do not remove other responders
 				this.stopAliveThread;
 				window = nil;
-				ctlr.remove;
+				serverController.remove;
+				serverStatusController.remove;
 			};
 		};
 
@@ -215,7 +217,7 @@
 			makeDefault.value = (Server.default == this).binaryValue;
 		};
 
-		if(serverRunning,running,stopped);
+		if(this.serverRunning, running, stopped);
 
 		w.view.decorator.nextLine;
 
@@ -250,8 +252,11 @@
 
 		if(isLocal or: { options.remoteControlVolume }) {
 		{
-			var volSpec, cpVol;
+			var volSpec, currentVolume;
 			var volumeSlider, muteButton, muteActions, volController;
+
+			currentVolume = this.volume.volume;
+
 			muteActions = [{this.unmute}, {this.mute}];
 			volSpec = [volume.min, volume.max, \db].asSpec;
 
@@ -267,17 +272,17 @@
 					["M", nil, faintRed]
 					])
 				.action_({arg me;
-					this.serverRunning.if({
+					if(this.serverRunning) {
 						muteActions[me.value].value;
-						}, {
+					} {
 						"The server must be booted to mute it".warn;
 						me.value_(0);
-						})
-					});
+					}
+				});
 
 			volumeNum = gui.numberBox.new(w, Rect(0, 0, 28, 18))
 				.font_(font)
-				.value_(0.0)
+				.value_(currentVolume)
 				.align_(\center)
 				.action_({arg me;
 					var newdb;
@@ -287,7 +292,7 @@
 					});
 
 			volumeSlider = gui.slider.new(w, Rect(0, 0, 172, 18))
-				.value_(volSpec.unmap(0))
+				.value_(volSpec.unmap(currentVolume).round(0.1))
 				.onClose_{volController.remove}
 				.action_({arg me;
 					var newdb;
@@ -303,8 +308,7 @@
 					if (unicode == 16rF701, { slider.decrement; });
 					if (unicode == 16rF702, { slider.decrement; });
 					nil;
-					})
-					;
+					});
 			volController = SimpleController(volume)
 				.put(\amp, {|changer, what, vol|
 					{
@@ -325,33 +329,45 @@
 		}.value;
 		};
 
- 		w.front;
+		w.front;
 
-		ctlr = SimpleController(this)
-			.put(\serverRunning, {	if(serverRunning,running,stopped) })
+		serverController = SimpleController(this)
+			.put(\serverRunning, {	if(this.serverRunning, running, stopped) })
 			.put(\counts,{
-				countsViews.at(0).string = avgCPU.round(0.1);
-				countsViews.at(1).string = peakCPU.round(0.1);
-				countsViews.at(2).string = numUGens;
-				countsViews.at(3).string = numSynths;
-				countsViews.at(4).string = numGroups;
-				countsViews.at(5).string = numSynthDefs;
+				countsViews.at(0).string = statusWatcher.avgCPU.round(0.1);
+				countsViews.at(1).string = statusWatcher.peakCPU.round(0.1);
+				countsViews.at(2).string = statusWatcher.numUGens;
+				countsViews.at(3).string = statusWatcher.numSynths;
+				countsViews.at(4).string = statusWatcher.numGroups;
+				countsViews.at(5).string = statusWatcher.numSynthDefs;
 			})
 			.put(\bundling, bundling)
 			.put(\default, showDefault);
 		if(isLocal){
-			ctlr.put(\cmdPeriod,{
-					recorder.setProperty(\value,0);
-				})
+			serverController.put(\cmdPeriod, {
+				recorder.setProperty(\value, 0)
+			})
 		};
 
 		this.startAliveThread;
 	}
 
 	plotTree {|interval=0.5|
+		var onClose, window = Window.new(name.asString + "Node Tree",
+			Rect(128, 64, 400, 400),
+			scroll:true
+		).front;
+		window.view.hasHorizontalScroller_(false).background_(Color.grey(0.9));
+		onClose = this.plotTreeView(interval, window.view, { defer {window.close}; });
+		window.onClose = {
+			onClose.value;
+		};
+	}
+
+	plotTreeView {|interval=0.5, parent, actionIfFail|
 		var resp, done = false;
 		var collectChildren, levels, countSize;
-		var window, view, bounds;
+		var view, bounds;
 		var updater, updateFunc;
 		var tabSize = 25;
 		var pen, font;
@@ -359,13 +375,7 @@
 		pen = GUI.current.pen;
 		font = Font.sansSerif(10);
 
-		window = Window.new(name.asString + "Node Tree",
-			Rect(128, 64, 400, 400),
-			scroll:true
-		).front;
-		window.view.hasHorizontalScroller_(false).background_(Color.grey(0.9));
-
-		view = UserView.new(window, Rect(0,0,400,400));
+		view = UserView.new(parent, Rect(0,0,400,400));
 
 		view.drawFunc = {
 			var xtabs = 0, ytabs = 0, drawFunc;
@@ -381,7 +391,7 @@
 						endYTabs = ytabs + thisSize + 0.2;
 						rect = Rect(xtabs * tabSize + 0.5,
 							ytabs * tabSize + 0.5,
-							window.view.bounds.width - (xtabs * tabSize * 2),
+							parent.bounds.width - (xtabs * tabSize * 2),
 							thisSize * tabSize;
 						);
 						pen.fillColor = Color.grey(0.8);
@@ -482,25 +492,26 @@
 		}, '/g_queryTree.reply', addr).fix;
 
 		updateFunc = {
-			fork {
+			updater = fork {
 				loop {
 					this.sendMsg("/g_queryTree", 0, 0);
 					interval.wait;
 				}
 			}
 		};
-		updater = updateFunc.value;
+		updateFunc.value;
 		CmdPeriod.add(updateFunc);
-		window.onClose = {
-			updater.stop;
-			CmdPeriod.remove(updateFunc);
-			resp.free;
-		};
 		SystemClock.sched(3, {
 			if(done.not, {
-				defer {window.close};
+				actionIfFail.value();
 				"Server failed to respond to Group:queryTree!".warn;
 			});
 		});
+		//action to be executed when enclosing window closes
+		^{
+			updater.stop;
+			CmdPeriod.remove(updateFunc);
+			resp.free;
+		}
 	}
 }

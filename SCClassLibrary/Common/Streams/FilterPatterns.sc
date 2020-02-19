@@ -18,8 +18,8 @@ Pn : FilterPattern {
 			repeats.value(event).do { event = pattern.embedInStream(event) };
 		} {
 			repeats.value(event).do {
-				event = pattern.embedInStream(event);
 				event[key] = true;
+				event = pattern.embedInStream(event);
 			};
 			event[key] = false;
 		};
@@ -36,9 +36,9 @@ Pgate  : Pn {
 		var stream, output;
 		repeats.do {
 			stream = pattern.asStream;
-			output = stream.next(event);
+			output = nil;  // force new value for every repeat
 			while {
-				if (event[key] == true) { output = stream.next(event) };
+				if (event[key] == true or: { output.isNil }) { output = stream.next(event) };
 				output.notNil;
 			} {
 				event = output.copy.embedInStream(event)
@@ -68,7 +68,7 @@ Pcollect : FuncFilterPattern {
 		}
 	}
 	asStream {
-		^pattern.asStream.collect(func);
+		^pattern.streamArg.collect(func);
 	}
 }
 
@@ -86,7 +86,7 @@ Pselect : FuncFilterPattern {
 		}
 	}
 	asStream {
-		^pattern.asStream.select(func);
+		^pattern.streamArg.select(func);
 	}
 }
 
@@ -104,7 +104,7 @@ Preject : FuncFilterPattern {
 		}
 	}
 	asStream {
-		^pattern.asStream.reject(func);
+		^pattern.streamArg.reject(func);
 	}
 }
 
@@ -271,26 +271,26 @@ Pstretch : FilterPattern {
 		^super.new(pattern).value_(value)
 	}
 	storeArgs { ^[value,pattern] }
-	embedInStream {  arg event;
+	embedInStream {  arg inevent;
 		var cleanup = EventStreamCleanup.new;
-		var inevent;
+		var event;
 		var val, delta;
 		var valStream = value.asStream;
 		var evtStream = pattern.asStream;
 
 		loop {
-			inevent = evtStream.next(event).asEvent;
-			if (inevent.isNil) { ^cleanup.exit(event) };
-			val = valStream.next(inevent);
-			if (val.isNil) { ^cleanup.exit(event) };
+			event = evtStream.next(inevent).asEvent;
+			if (event.isNil) { ^cleanup.exit(inevent) };
+			val = valStream.next(event);
+			if (val.isNil) { ^cleanup.exit(inevent) };
 
 			delta = event[\delta];
 			if (delta.notNil) {
-				inevent[\delta] = delta * val;
+				event[\delta] = delta * val;
 			};
-			inevent[\dur] = inevent[\dur] * val;
-			cleanup.update(inevent);
-			event = yield(inevent);
+			event[\dur] = event[\dur] * val;
+			cleanup.update(event);
+			inevent = yield(event);
 		}
 	}
 }
@@ -299,28 +299,27 @@ Pstretch : FilterPattern {
 
 Pstretchp : Pstretch {
 
-	embedInStream { arg event;
-		var evtStream, val, inevent, delta;
+	embedInStream { arg inevent;
+		var evtStream, val, event, delta;
 		var valStream = value.asStream;
 		while {
-			val = valStream.next(event).asEvent;
+			val = valStream.next(inevent);
 			val.notNil
 		} {
 			evtStream = pattern.asStream;
 			while {
-				inevent = evtStream.next(event);
-				// if(event.isNil) { ^nil.yield };
-				inevent.notNil
+				event = evtStream.next(inevent);
+				event.notNil
 			} {
-				delta = inevent[\delta];
+				delta = event[\delta];
 				if (delta.notNil) {
-					inevent[\delta] = delta * val;
+					event[\delta] = delta * val;
 				};
-				inevent[\dur] = inevent[\dur] * val;
-				event = inevent.yield;
+				event[\dur] = event[\dur] * val;
+				inevent = event.yield;
 			};
 		};
-		^event;
+		^inevent;
 	}
 }
 
@@ -380,12 +379,11 @@ Pfin : FilterPattern {
 		^super.new(pattern).count_(count)
 	}
 	storeArgs { ^[count,pattern] }
-	asStream { | cleanup| ^Routine({ arg inval; this.embedInStream(inval, cleanup) }) }
 
-	embedInStream { arg event, cleanup;
+	embedInStream { arg event;
 		var inevent;
 		var stream = pattern.asStream;
-		cleanup ?? { cleanup = EventStreamCleanup.new };
+		var cleanup = EventStreamCleanup.new;
 		count.value(event).do({
 			inevent = stream.next(event) ?? { ^event };
 			cleanup.update(inevent);
@@ -421,14 +419,12 @@ Pfindur : FilterPattern {
 		^super.new(pattern).dur_(dur).tolerance_(tolerance)
 	}
 	storeArgs { ^[dur,pattern,tolerance] }
-	asStream { | cleanup| ^Routine({ arg inval; this.embedInStream(inval, cleanup) }) }
 
-	embedInStream { arg event, cleanup;
-		var item, delta, elapsed = 0.0, nextElapsed, inevent,
-		localdur = dur.value(event);
+	embedInStream { arg event;
+		var item, delta, elapsed = 0.0, nextElapsed, inevent;
+		var localdur = dur.value(event);
 		var stream = pattern.asStream;
-
-		cleanup ?? { cleanup = EventStreamCleanup.new };
+		var cleanup = EventStreamCleanup.new;
 		loop {
 			inevent = stream.next(event).asEvent ?? { ^event };
 			cleanup.update(inevent);
@@ -544,7 +540,7 @@ Pbindf : FilterPattern {
 	var <>patternpairs;
 	*new { arg pattern ... pairs;
 		if (pairs.size.odd, { Error("Pbindf should have odd number of args.\n").throw });
-		^super.new(pattern ? Event.default).patternpairs_(pairs)
+		^super.new(pattern ?? { Event.default }).patternpairs_(pairs)
 	}
 	storeArgs { ^[pattern] ++ patternpairs }
 	embedInStream { arg event;

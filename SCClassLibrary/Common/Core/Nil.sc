@@ -33,6 +33,8 @@ Nil {
 	collectAs {}
 	selectAs {}
 	rejectAs {}
+	collectInPlace {}
+	collectCopy {}
 
 	// dependancy operators are no-ops
 	dependants {
@@ -91,7 +93,7 @@ Nil {
 		^if(functions.size <= 1) {functions[0] } { FunctionList(functions) }
 	}
 	removeFunc { ^this }
-	
+
 	replaceFunc { }
 
 	// if Main-startup fails then AppClock scheduler may be nil. If that happens an

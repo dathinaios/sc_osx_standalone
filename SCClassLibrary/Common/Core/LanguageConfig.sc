@@ -1,11 +1,17 @@
 LanguageConfig {
 	*store {|file|
 		_LanguageConfig_writeConfigFile
+		^MethodError("Could not write to file %".format(file.asCompileString), this).throw
+	}
+
+	*currentPath {
+		_LanguageConfig_getCurrentConfigPath
 		^this.primitiveFailed
 	}
 
 	*includePaths {
 		_LanguageConfig_getIncludePaths
+		^this.primitiveFailed
 	}
 	*addIncludePath {|aPath|
 		_LanguageConfig_addIncludePath
@@ -18,6 +24,7 @@ LanguageConfig {
 
 	*excludePaths {
 		_LanguageConfig_getExcludePaths
+		^this.primitiveFailed
 	}
 	*addExcludePath {|aPath|
 		_LanguageConfig_addExcludePath
@@ -30,6 +37,7 @@ LanguageConfig {
 
 	*postInlineWarnings {
 		_LanguageConfig_getPostInlineWarnings
+		^this.primitiveFailed
 	}
 	*postInlineWarnings_ {|aBoolean|
 		_LanguageConfig_setPostInlineWarnings

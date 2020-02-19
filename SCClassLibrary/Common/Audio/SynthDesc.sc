@@ -27,7 +27,7 @@ SynthDesc {
 	}
 
 	*initClass {
-		mdPlugin = AbstractMDPlugin;	// override in your startup file
+		mdPlugin = TextArchiveMDPlugin;	// override in your startup file
 	}
 
 	send { arg server, completionMsg;
@@ -41,6 +41,7 @@ SynthDesc {
 		outputs.do {|output| stream << "   O "; output.printOn(stream); $\n.printOn(stream) };
 	}
 
+	// don't use *read or *readFile to read into a SynthDescLib. Use SynthDescLib:read or SynthDescLib:readStream instead
 	*read { arg path, keepDefs=false, dict;
 		dict = dict ?? { IdentityDictionary.new };
 		path.pathMatch.do { |filename|
@@ -153,7 +154,7 @@ SynthDesc {
 		}
 
 	}
-	
+
 	// synthdef ver 2
 	readSynthDef2 { arg stream, keepDef=false;
 		var	numControls, numConstants, numControlNames, numUGens, numVariants;
@@ -297,7 +298,7 @@ SynthDesc {
 			};
 		};
 	}
-	
+
 	// synthdef ver 2
 	readUGenSpec2 { arg stream;
 		var ugenClass, rateIndex, rate, numInputs, numOutputs, specialIndex;
@@ -392,6 +393,7 @@ SynthDesc {
 				};
 			};
 		});
+		if(names.size > 255) { Error("A synthDef cannot have more than 255 control names.").throw };
 			// reusing variable to know if I should continue or not
 		if(comma) {
 "\nYour synthdef has been saved in the library and loaded on the server, if running.
@@ -449,7 +451,7 @@ Use of this synth in Patterns will not detect argument names automatically becau
 			// do not compile the string if no argnames were added
 		if(names > 0) { msgFunc = string.compile.value };
 	}
-	
+
 	msgFuncKeepGate_ { |bool = false|
 		if(bool != msgFuncKeepGate) {
 			msgFuncKeepGate = bool;
@@ -473,13 +475,14 @@ Use of this synth in Patterns will not detect argument names automatically becau
 		size = stream.getInt8;
 		n = String.newClear(size);
 		^Array.fill(size, {
-		  stream.getChar.asAscii
+			stream.getChar.asAscii
 		}).as(String)
 	}
 
 	outputData {
 		var ugens = def.children;
 		var outs = ugens.select(_.writesToBus);
+
 		^outs.collect { |outUgen|
 			(rate: outUgen.rate, numChannels: outUgen.numAudioChannels)
 		}
@@ -526,7 +529,9 @@ SynthDescLib {
 	}
 
 	*send { |server, tryToLoadReconstructedDefs = true|
-		global.send(server, tryToLoadReconstructedDefs);
+		if (server.hasBooted) {
+			global.send(server, tryToLoadReconstructedDefs);
+		}
 	}
 
 	*read { arg path;
@@ -539,6 +544,7 @@ SynthDescLib {
 
 	add { |synthdesc|
 		synthDescs.put(synthdesc.name.asSymbol, synthdesc);
+		this.changed(\synthDescAdded, synthdesc);
 	}
 
 	removeAt { |name|
@@ -579,11 +585,67 @@ SynthDescLib {
 		};
 	}
 
-	read { arg path;
+	read { arg path, keepDefs=true;
 		if (path.isNil) {
 			path = SynthDef.synthDefDir ++ "*.scsyndef";
 		};
-		synthDescs = SynthDesc.read(path, true, synthDescs);
+		path.pathMatch.do { |filename|
+			var file, result;
+			file = File(filename, "r");
+			protect {
+				this.readStream(file, keepDefs, filename);
+			}{
+				file.close;
+			};
+		};
+	}
+
+	readStream { arg stream, keepDefs=true, path;
+		var numDefs, version, resultSet;
+		stream.getInt32; // 'SCgf'
+		version = stream.getInt32; // version
+		numDefs = stream.getInt16;
+		resultSet = Set.new(numDefs);
+		numDefs.do {
+			var desc;
+			if(version >= 2, {
+				desc = SynthDesc.new.readSynthDef2(stream, keepDefs);
+			},{
+				desc = SynthDesc.new.readSynthDef(stream, keepDefs);
+			});
+			synthDescs.put(desc.name.asSymbol, desc);
+			resultSet.add(desc);
+				// AbstractMDPlugin dynamically determines the md archive type
+				// from the file extension
+			if(path.notNil) {
+				desc.metadata = AbstractMDPlugin.readMetadata(path);
+			};
+			SynthDesc.populateMetadataFunc.value(desc);
+			if(desc.def.notNil and: { stream.isKindOf(CollStream).not }) {
+				desc.def.metadata ?? { desc.def.metadata = () };
+				desc.def.metadata.put(\shouldNotSend, true)
+					.put(\loadPath, path);
+			};
+		};
+		resultSet.do({|newDesc| this.changed(\synthDescAdded, newDesc); });
+		^resultSet
+	}
+
+	readDescFromDef {arg stream, keepDef=true, def, metadata;
+		var desc, numDefs, version;
+		stream.getInt32; // 'SCgf'
+		version = stream.getInt32; // version
+		numDefs = stream.getInt16; // should be 1
+		if(version >= 2, {
+			desc = SynthDesc.new.readSynthDef2(stream, keepDef);
+		},{
+			desc = SynthDesc.new.readSynthDef(stream, keepDef);
+		});
+		if(keepDef) { desc.def = def };
+		if(metadata.notNil) { desc.metadata = metadata };
+		synthDescs.put(desc.name.asSymbol, desc);
+		this.changed(\synthDescAdded, desc);
+		^desc
 	}
 }
 
@@ -600,8 +662,10 @@ AbstractMDPlugin {
 	*writeMetadata { |metadata, synthdef, path|
 
 		this.clearMetadata(path);
-		path = this.applyExtension(path);
-		this.writeMetadataFile(metadata, synthdef, path);
+		if(metadata.notNil and: { metadata.size > 0 }) {
+			path = this.applyExtension(path);
+			this.writeMetadataFile(metadata, synthdef, path);
+		};
 	}
 	*writeMetadataFile {}
 

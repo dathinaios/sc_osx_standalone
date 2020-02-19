@@ -1,7 +1,7 @@
 EZRanger : EZGui {
 
-	var <rangeSlider, <hiBox,<loBox, <unitView, <>controlSpec,
-		 <>action,<lo, <hi, popUp=false, numSize,numberWidth,unitWidth;
+	var <rangeSlider, <hiBox,<loBox, <unitView, <>controlSpec, <lo, <hi;
+	var numSize, numberWidth, unitWidth;
 	var <>round = 0.001;
 
 	*new { arg parent, bounds, label, controlSpec, action, initVal,
@@ -40,18 +40,18 @@ EZRanger : EZGui {
 				= this.prSubViewBounds(innerBounds, label.notNil, unitWidth>0);
 
 		label.notNil.if{ //only add a label if desired
-			labelView = GUI.staticText.new(view, labelBounds);
+			labelView = StaticText.new(view, labelBounds);
 			labelView.string = label;
 		};
 
 		(unitWidth>0).if{ //only add a unitLabel if desired
-			unitView = GUI.staticText.new(view, unitBounds);
+			unitView = StaticText.new(view, unitBounds);
 		};
 
 
-		loBox = GUI.numberBox.new(view, loBounds);
-		rangeSlider = GUI.rangeSlider.new(view, rangerBounds);
-		hiBox = GUI.numberBox.new(view, hiBounds);
+		loBox = NumberBox.new(view, loBounds);
+		rangeSlider = RangeSlider.new(view, rangerBounds);
+		hiBox = NumberBox.new(view, hiBounds);
 
 		controlSpec = argControlSpec.asSpec;
 		(unitWidth>0).if{unitView.string = " "++controlSpec.units.asString};
@@ -89,7 +89,7 @@ EZRanger : EZGui {
 		loBox.scroll_step=numberStep;
 
 		rangeSlider.receiveDragHandler = { arg slider;
-			slider.valueAction = controlSpec.unmap(GUI.view.currentDrag);
+			slider.valueAction = controlSpec.unmap(View.currentDrag);
 		};
 
 		rangeSlider.beginDragAction = { arg slider;
@@ -132,7 +132,7 @@ EZRanger : EZGui {
 		rangeSlider.hi_(controlSpec.unmap(hi));
 	}
 	setColors{arg stringBackground, stringColor, sliderColor,  numBackground,numStringColor,
-			 numNormalColor, numTypingColor, knobColor,background ;
+			numNormalColor, numTypingColor, knobColor,background ;
 
 			stringBackground.notNil.if{
 				labelView.notNil.if{labelView.background_(stringBackground)};
@@ -249,7 +249,7 @@ EZRanger : EZGui {
 						);
 				},
 
-			 \vert, {
+			\vert, {
 				hasLabel.not.if{labelH=0; gap1.y=0};
 				labelBounds = (rect.width@labelH).asRect; // to top
 				hasUnit.not.if{unitH=0; gap4 = 0@0;};
@@ -267,7 +267,7 @@ EZRanger : EZGui {
 					);
 				},
 
-			 \horz, {
+			\horz, {
 				hasLabel.not.if{ gap1 = 0@0; labelSize.x = 0 ;};
 				hasUnit.not.if{ gap4 = 0@0; unitWidth = 0};
 				labelSize.y=rect.height;
