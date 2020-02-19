@@ -32,4 +32,4 @@ A: Put your files in the `Resources` directory. You can then access them using `
 
 Q: Where is the `3.8` version?
 
-A: There are some issues with linking the `QT` libraries in `3.8` that makes it impossible to create the standalone for now. See [this thread](http://new-supercollider-mailing-lists-forums-use-these.2681727.n2.nabble.com/3-7-sc-osx-standalone-Qt-issue-td7624112.html) in the mailing list for more info.
+A: There are some issues with linking the `QT` libraries in `3.8` that makes it impossible to create the standalone for now. See [this issue](https://github.com/supercollider/supercollider/issues/1681) for more info.
