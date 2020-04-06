@@ -16,7 +16,7 @@ Modified from [the linux version](https://github.com/miguel-negrao/scStandalone)
           };
 
 5. Include your extensions in the `SCClassLibrary` folder.
-6. [Platypus ](http://sveinbjorn.org/platypus) can be used to convert the script based structure into a native OSX application.
+6. [Platypus ](http://sveinbjorn.org/platypus) can be used to convert the script based structure into a "native" OSX application.
   - Open Platypus
   - Fill in the App name
   - Click the `Select Script` button and choose the `run.sh` file.
