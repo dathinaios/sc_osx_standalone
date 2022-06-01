@@ -1,6 +1,6 @@
-# Absolute path to this script, e.g. /home/user/bin/foo.sh
+# Absolute path to this script
 SCRIPT=$(readlink -f "$0")
-# Absolute path this script is in, thus /home/user/bin
+# Absolute path this script is in
 SCRIPTPATH=$(dirname "$SCRIPT")
 # Link the QT PlugIns
 export QT_PLUGIN_PATH="./QT_PlugIns"
@@ -19,7 +19,6 @@ echo "
 		helpDir = this.systemAppSupportDir++\"/Help\";
 
 		// Server setup
-		// Server.program = \"./Resources/scsynth -U ./Resources/plugins -D 0\";
 		Server.program = \"$SCRIPTPATH/Resources/scsynth -U $SCRIPTPATH/Resources/plugins -D 0\";
 
 		// Score setup
