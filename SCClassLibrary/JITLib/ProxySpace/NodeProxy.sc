@@ -3,7 +3,7 @@ NodeProxy : BusPlug {
 	var <group, <objects, <nodeMap, <children;
 	var <loaded=false, <>awake=true, <paused=false;
 	var <>clock, <>quant;
-	classvar <>buildProxyControl, <>buildProxy;
+	classvar <>buildProxyControl, <>buildProxy, <defaultFadeTime=0.02;
 
 
 	*new { | server, rate, numChannels, inputs |
@@ -16,6 +16,7 @@ NodeProxy : BusPlug {
 
 	init {
 		nodeMap = ProxyNodeMap.new;
+		nodeMap.put(\fadeTime, defaultFadeTime);
 		objects = Order.new;
 		loaded = false;
 		reshaping = defaultReshaping;
@@ -83,11 +84,11 @@ NodeProxy : BusPlug {
 	}
 
 	fadeTime_ { | dur |
-		if(dur.isNil) { this.unset(\fadeTime) } { this.set(\fadeTime, dur) };
+		this.set(\fadeTime, dur ? defaultFadeTime) // Use default if fadeTime set to nil
 	}
 
 	fadeTime {
-		^nodeMap.at(\fadeTime) ? 0.02;
+		^nodeMap.at(\fadeTime) ? defaultFadeTime
 	}
 
 	asGroup { ^group.asGroup }
@@ -414,7 +415,7 @@ NodeProxy : BusPlug {
 	<<> { | proxy, key = \in |
 		var ctl, rate, numChannels, canBeMapped;
 		if(proxy.isNil) { ^this.unmap(key) };
-		ctl = this.controlNames.detect { |x| x.name == key };
+		ctl = this.findControlName(key);
 		rate = ctl.rate ?? {
 			if(proxy.isNeutral) {
 				if(this.isNeutral) { \audio } { this.rate }
@@ -423,13 +424,12 @@ NodeProxy : BusPlug {
 			}
 		};
 		numChannels = ctl !? { ctl.defaultValue.asArray.size };
-		canBeMapped = proxy.initBus(rate, numChannels); // warning: proxy should still have a fixed bus
-		if(canBeMapped) {
-			if(this.isNeutral) { this.defineBus(rate, numChannels) };
-			this.xmap(key, proxy);
-		} {
-			"Could not link node proxies, no matching input found.".warn
-		};
+
+		if(proxy.isNeutral) { proxy.defineBus(rate, numChannels) };
+		if(this.isNeutral) { this.defineBus(rate, numChannels) };
+
+		this.xmap(key, proxy);
+
 		^proxy // returns first argument for further chaining
 	}
 
@@ -524,6 +524,7 @@ NodeProxy : BusPlug {
 		loaded = false;
 		awake = proxy.awake; paused = proxy.paused;
 		clock = proxy.clock; quant = proxy.quant;
+		this.fadeTime = proxy.fadeTime;
 
 	}
 
@@ -645,6 +646,16 @@ NodeProxy : BusPlug {
 			}
 		};
 		^objCtlNames
+	}
+
+
+	findControlName { | key |
+		objects.do { |el|
+			el.controlNames.do { |item|
+				if(key == item.name) { ^item }
+			};
+		};
+		^nil
 	}
 
 	resetNodeMap {
@@ -896,17 +907,23 @@ NodeProxy : BusPlug {
 	// allocation
 
 	freeBus {
-		var oldBus = bus, c;
+		var oldBus = bus;
 		if(oldBus.isNil) { ^this };
-		if(this.isPlaying) {
-			c = (clock ? TempoClock.default);
-			c.sched(server.latency ? 0.01 + quant.nextTimeOnGrid(c) + this.fadeTime, { oldBus.free(true); nil });
-			CmdPeriod.doOnce { if(oldBus.index.notNil) { oldBus.free(true) } };
-		} {
-			oldBus.free(true)
-		};
+		this.schedAfterFade({
+			if(oldBus.index.notNil) { oldBus.free(true) }
+		});
 		busArg = bus = nil;
 		busLoaded = false;
+	}
+
+	schedAfterFade { |func|
+		var usedClock, time;
+		if(this.isPlaying, {
+			usedClock = clock ? TempoClock.default;
+			time = this.fadeTime + (server.latency ? 0.01) + (quant ? 0).nextTimeOnGrid(usedClock);
+			usedClock.schedAbs(time, { func.value; func = nil });
+			CmdPeriod.doOnce { func.value; func = nil };
+		}, func)
 	}
 
 	reallocBusIfNeeded { // bus is reallocated only if the server was not booted on creation.
@@ -982,6 +999,21 @@ NodeProxy : BusPlug {
 		};
 		^SynthDef(name, func);
 	}
+
+	specs {
+		var specs = ();
+		this.objects.do {
+			|obj|
+			if (obj.respondsTo(\specs)) {
+				specs = specs.merge(obj.specs, {
+					|a, b, key|
+					"Duplicate specs for key: % - only one will be used.".format(key).warn;
+					a;
+				});
+			}
+		};
+		^specs
+	}
 }
 
 
@@ -1043,9 +1075,11 @@ Ndef : NodeProxy {
 	}
 
 	copy { |toKey|
-		if(key == toKey) { Error("cannot copy to identical key").throw };
+		if(toKey.isNil or: { key == toKey }) { Error("can only copy to new key (key is %)".format(toKey)).throw };
 		^this.class.new(toKey).copyState(this)
 	}
+
+	dup { |n = 2| ^{ this }.dup(n) } // avoid copy in Object::dup
 
 	proxyspace {
 		^this.class.dictFor(this.server)

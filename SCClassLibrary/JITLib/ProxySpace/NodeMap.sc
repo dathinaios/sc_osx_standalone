@@ -141,7 +141,7 @@ ProxyNodeMap : NodeMap {
 	settingKeys {
 		var res;
 		this.keysValuesDo { |key, val|
-			if(val.isNumber or: { val.isSequenceableCollection }) { res = res.add(key) }
+			if(val.nodeMapMapsToControl.not) { res = res.add(key) }
 		}
 		^res
 	}
@@ -149,7 +149,7 @@ ProxyNodeMap : NodeMap {
 	mappingKeys {
 		var res;
 		this.keysValuesDo { |key, val|
-			if(val.isNumber.not and: { val.isSequenceableCollection.not }) { res = res.add(key) }
+			if(val.nodeMapMapsToControl) { res = res.add(key) }
 		}
 		^res
 	}

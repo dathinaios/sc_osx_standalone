@@ -1,8 +1,0 @@
-includePaths:
-    - SystemOverwrites
-    - SCClassLibrary
-excludePaths:
-    - /Users/dathin/Library/Application Support/SuperCollider/Extensions
-    - /Library/Application Support/SuperCollider/Extensions
-    - /Applications/SuperCollider.app/Contents/Resources/SCClassLibrary
-postInlineWarnings: false
