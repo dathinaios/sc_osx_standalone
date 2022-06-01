@@ -2,7 +2,7 @@
 
 Modified from [the linux version](https://github.com/miguel-negrao/scStandalone).
 
-[SuperCollider](http://supercollider.sourceforge.net/) version `3.10.4`
+[SuperCollider](http://supercollider.sourceforge.net/) version `3.12.2`
 
 ## Usage
 
