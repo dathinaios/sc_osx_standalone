@@ -34,7 +34,6 @@ echo "
 echo "includePaths:
     - SystemOverwrites
     - SCClassLibrary
-    - plugins
 excludePaths:
     - $HOME/Library/Application Support/SuperCollider/Extensions
     - /Library/Application Support/SuperCollider/Extensions
