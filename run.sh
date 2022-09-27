@@ -29,7 +29,7 @@ echo "
 		helpDir = this.systemAppSupportDir++\"/Help\";
 
 		// Server setup
-		Server.program = \"$SCRIPTPATH/Resources/scsynth -U $SCRIPTPATH/Resources/plugins -D 0\";
+		Server.program = \"'$SCRIPTPATH/Resources/scsynth' -U '$SCRIPTPATH/Resources/plugins' -D 0\";
 
 		// Score setup
 		Score.program = Server.program;
