@@ -1,32 +1,53 @@
 Plot {
+	classvar <initGuiSkin;
 
-	var <>plotter, <value;
-	var <bounds, <plotBounds,<>drawGrid;
-
+	var <>plotter;
+	var <value, <bounds, <plotBounds, <>drawGrid;
 	var <spec, <domainSpec;
 	var <font, <fontColor, <gridColorX, <gridColorY, <plotColor, <>backgroundColor, <plotMode;
-	var <gridOnX = true, <gridOnY = true, <>labelX, <>labelY;
-
+	var <labelX, <labelY, <labelFont, <labelFontColor;
+	var <gridOnX = true, <gridOnY = true;
+	var labelXIsUnits = false, labelYIsUnits = false;
+	var <showUnits = true, <unitLocation = \axis; // \ticks or \axis
+	var <>labelMargin = 2;  // margin around tick or axis labels
+	var <>borderMargin = 3; // margin separating the edge of the view from its inner elements
+	var <>hideLabelsHeightRatio = 1.2, <>hideLabelsWidthRatio = 1.5; // hide labels below plot:labels ratio
 	var valueCache, resolution;
 
 	*initClass {
 		if(Platform.hasQt.not) { ^nil; };	// skip init on Qt-less builds
 
-		StartUp.add {
-			GUI.skin.put(\plot, (
-				gridColorX: QtGUI.palette.highlight,
-				gridColorY: QtGUI.palette.highlight,
-				fontColor: QtGUI.palette.windowText,
-				plotColor: [QtGUI.palette.windowText, Color.blue.valueBlend(QtGUI.palette.windowText), Color.red.valueBlend(QtGUI.palette.windowText), Color.green(0.7).valueBlend(QtGUI.palette.windowText)],
-				background: QtGUI.palette.base,
+		initGuiSkin = {
+			var palette = QtGUI.palette;
+			var hl = palette.highlight;
+			var base = palette.base;
+			var baseText = palette.baseText;
+			var butt = palette.button;
+			var gridCol = palette.window;
+			var labelCol = butt.blend(baseText, 0.6);
+
+			GUI.skins.put(\plot, (
+				gridColorX: gridCol,
+				gridColorY: gridCol,
+				fontColor: labelCol, // for tick labels
+				labelFontColor: labelCol, // for axis labels
+				plotColor: [baseText.blend(hl, 0.5)], // should be an array for multichannel support
+				background: base,
 				gridLinePattern: nil,
 				gridLineSmoothing: false,
-				labelX: "",
-				labelY: "",
+				labelX: nil, // axis label
+				labelY: nil,
 				expertMode: false,
-				gridFont: Font( Font.defaultSansFace, 9 )
+				gridFont: Font( Font.defaultSansFace, 9 ), // for tick labels
+				labelFont: Font( Font.defaultSansFace, 10 ) // for axis labels
 			));
-		}
+		};
+		initGuiSkin.value;
+		StartUp.add(this);
+	}
+
+	*doOnStartUp {
+		initGuiSkin.value;
 	}
 
 	*new { |plotter|
@@ -34,35 +55,154 @@ Plot {
 	}
 
 	init {
-		var fontName;
-		var gui = plotter.gui;
-		var skin = GUI.skin.at(\plot);
+		var skin = GUI.skins.at(\plot);
 
 		drawGrid = DrawGrid(bounds ? Rect(0,0,1,1),nil,nil);
-		drawGrid.x.labelOffset = Point(0,4);
-		drawGrid.y.labelOffset = Point(-10,0);
 		skin.use {
-			font = ~gridFont ?? { Font.default };
+			font = ~gridFont ?? { Font( Font.defaultSansFace, 9 ) };
+			labelFont = ~labelFont ?? { Font( Font.defaultSansFace, 10 ) };
 			this.gridColorX = ~gridColorX;
 			this.gridColorY = ~gridColorY;
 			plotColor = ~plotColor;
 			this.fontColor = ~fontColor;
+			this.labelFontColor = ~labelFontColor;
 			backgroundColor = ~background;
 			this.gridLineSmoothing = ~gridLineSmoothing;
 			this.gridLinePattern = ~gridLinePattern !? {~gridLinePattern.as(FloatArray)};
-			labelX = ~labelX;
+			labelX = ~labelX; // axis label
 			labelY = ~labelY;
 		};
-
-		resolution =  plotter.resolution;
+		resolution = plotter.resolution;
 	}
 
-	bounds_ { |rect|
-		var size = (try { "foo".bounds(font).height } ?? { font.size } * 1.5);
-		plotBounds = if(rect.height > 40) { rect.insetBy(size, size) } { rect };
-		bounds = rect;
+	bounds_ { |viewRect|
+		var gridRect, sizeAllowsXLabels, sizeAllowsYLabels;
+
 		valueCache = nil;
-		drawGrid.bounds = plotBounds;
+		bounds = viewRect;
+
+		#gridRect, sizeAllowsXLabels, sizeAllowsYLabels = this.prCalcLabelSpace(viewRect);
+
+		drawGrid.x.labelsHiddenBySize = sizeAllowsXLabels.not;
+		drawGrid.y.labelsHiddenBySize = sizeAllowsYLabels.not;
+		drawGrid.bounds = gridRect;
+		plotBounds = gridRect;
+	}
+
+	// Calculate grid offset to accomodate tick and axis labels,
+	// return modified gridRect and bools allowing X and Y labels.
+	// Currently only supports tick labels that don't extend past
+	// the side opposite their respective axis.
+	// TODO: this method could be refactored to use the
+	// DrawGridX/Y.showLabels instance vars independently to skip
+	// corresponding calculations below when false.
+	prCalcLabelSpace { |viewRect|
+		var gridRect;
+		var tkLHang, tkBHang;
+		var xTkLHang, xTkTHang, xTkRHang, xTkBHang;
+		var yTkLHang, yTkTHang, yTkRHang, yTkBHang;
+		var tkBMargin, bottomMargin, totalBottomPad, totalTopPad, totalVertSpace;
+		var tkLMargin, leftMargin, xLeftPad, xRightPad, leftPad, rightPad, totalHorizPad, addTopPad;
+
+		var htAllowsXLabels = true, htAllowsYLabels = true;
+		var wdAllowsXLabels = true, wdAllowsYLabels = true;
+		var sizeAllowsXLabels = true, sizeAllowsYLabels = true;
+		var xAxHt = 0, xAxMargin = 0, yAxWd = 0, yAxMargin = 0;
+
+		gridRect = viewRect.insetBy(borderMargin); // default with no labels
+
+		// Tick label overhang of Left, Top, Right, Bottom of gridRect
+		// returns 0's if drawGrid.x/y.showLabels is false
+		#xTkLHang, xTkTHang, xTkRHang, xTkBHang = drawGrid.x.labelOverhang.max(0);
+		#yTkLHang, yTkTHang, yTkRHang, yTkBHang = drawGrid.y.labelOverhang.max(0);
+
+		if(labelX.notNil) {
+			xAxHt = labelX.bounds(labelFont).height;
+			xAxMargin = labelMargin;
+		};
+
+		// First calculate vertical space needed for tick and axis labels
+		// to determine if X labels will be hidden based on the view height.
+		// (If so, Y labels that overhang vertically may need to also be hidden).
+
+		tkBHang = max(xTkBHang, yTkBHang);
+		// if there's label overhang, give it its margin
+		tkBMargin = if(tkBHang > 0) { labelMargin } { 0 };
+		// only the largest margin of all elements is needed
+		bottomMargin = maxItem([xAxMargin, borderMargin, tkBMargin]);
+
+		// add up all elements extending below the grid
+		totalBottomPad = tkBHang + xAxMargin + xAxHt + bottomMargin;
+		totalTopPad = (yTkTHang + labelMargin).max(borderMargin);
+		totalVertSpace = totalTopPad + totalBottomPad;
+		htAllowsXLabels = viewRect.height >= (totalVertSpace * (hideLabelsHeightRatio+1));
+		sizeAllowsXLabels = htAllowsXLabels;
+
+		// If x labels are still shown calculate horizontal space needed
+		// to determine if they will be hidden based on the view width.
+		if(htAllowsXLabels) {
+			xLeftPad = if(xTkLHang > 0) { xTkLHang + labelMargin } { 0 };
+			xRightPad = if(xTkRHang > 0) { xTkRHang + labelMargin } { 0 };
+			totalHorizPad = xLeftPad.max(borderMargin) + xRightPad.max(borderMargin);
+			wdAllowsXLabels = viewRect.width >= (totalHorizPad * (hideLabelsWidthRatio+1));
+			sizeAllowsXLabels = wdAllowsXLabels;
+			// if width is too small for x labels, it should be too small for Y labels too
+			sizeAllowsYLabels = wdAllowsXLabels;
+		};
+
+		// update the grid size if X gets hidden
+		if(sizeAllowsXLabels) {
+			// show X labels, make space for them
+			gridRect.height = viewRect.height - (borderMargin + totalBottomPad);
+			gridRect.width = viewRect.width  - totalHorizPad;
+			gridRect.left = max(xLeftPad, borderMargin);
+		} {
+			// if y tick label extends below bottom, they need to be turned off too.
+			totalBottomPad = if(yTkBHang > 0) { yTkBHang + labelMargin } { 0 };
+			htAllowsYLabels = totalBottomPad <= borderMargin;
+			sizeAllowsYLabels = htAllowsYLabels;
+		};
+
+		// Y-axis label area
+		if (sizeAllowsYLabels) {
+			if(labelY.notNil) {
+				yAxWd = labelY.bounds(labelFont).height;
+				yAxMargin = labelMargin;
+			};
+			if(sizeAllowsXLabels.not) {
+				xTkLHang = xTkRHang = 0;
+			};
+
+			// left side
+			tkLHang = maxItem([xTkLHang, yTkLHang, 0]);
+			tkLMargin = if(tkLHang > 0) { labelMargin } { 0 };
+			// only the largest margin of all elements is needed
+			leftMargin = maxItem([yAxMargin, borderMargin, tkLMargin]);
+			leftPad = leftMargin + yAxWd + yAxMargin + tkLHang;
+
+			rightPad = max(
+				if(xTkRHang > 0) { xTkRHang + labelMargin } { 0 },
+				borderMargin
+			);
+
+			totalHorizPad = leftPad + rightPad;
+			wdAllowsYLabels = viewRect.width >= (totalHorizPad * (hideLabelsWidthRatio+1));
+
+			sizeAllowsYLabels = wdAllowsYLabels and: { htAllowsYLabels };
+
+			if(sizeAllowsYLabels) {
+				gridRect.width = viewRect.width - (leftPad + rightPad);
+				gridRect.left = leftPad;
+				// add additional space to top border margin if y label extends past bound
+				addTopPad = totalTopPad - borderMargin;
+				if (addTopPad > 0) {
+					gridRect.height = gridRect.height - addTopPad;
+					gridRect.top = gridRect.top + addTopPad;
+				};
+			};
+		};
+
+		^[gridRect, sizeAllowsXLabels, sizeAllowsYLabels]
 	}
 
 	value_ { |array|
@@ -71,22 +211,24 @@ Plot {
 	}
 	spec_ { |sp|
 		spec = sp;
-		if(gridOnY and: spec.notNil,{
+		if(gridOnY and: { spec.notNil }) {
 			drawGrid.vertGrid = spec.grid;
-		},{
-			drawGrid.vertGrid = nil
-		})
+			this.unitLocation_(this.unitLocation); // updates unit labels if enabled
+		} {
+			drawGrid.vertGrid = nil;
+		};
 	}
 	domainSpec_ { |sp|
 		domainSpec = sp;
-		if(gridOnX and: domainSpec.notNil,{
+		if(gridOnX and: { domainSpec.notNil }) {
 			drawGrid.horzGrid = domainSpec.grid;
-		},{
-			drawGrid.horzGrid = nil
-		})
+			this.unitLocation_(this.unitLocation); // updates unit labels if enabled
+		} {
+			drawGrid.horzGrid = nil;
+		};
 	}
 	plotColor_ { |c|
-		plotColor = c.asArray;
+		plotColor = c.as(Array);
 	}
 	gridColorX_ { |c|
 		drawGrid.x.gridColor = c;
@@ -107,6 +249,20 @@ Plot {
 		fontColor = c;
 		drawGrid.fontColor = c;
 	}
+	labelFont_ { |f|
+		labelFont = f;
+	}
+	labelFontColor_ { |c|
+		labelFontColor = c;
+	}
+	labelX_ { |string|
+		labelX = string;
+		labelXIsUnits = false;
+	}
+	labelY_ { |string|
+		labelY = string;
+		labelYIsUnits = false;
+	}
 	gridLineSmoothing_ { |bool|
 		drawGrid.smoothing = bool;
 	}
@@ -120,6 +276,59 @@ Plot {
 	gridOnY_ { |bool|
 		gridOnY= bool;
 		drawGrid.vertGrid = if(gridOnY,{spec.grid},{nil});
+	}
+	showUnits_ { |bool|
+		showUnits = bool;
+		if(showUnits) {
+			// sets/updates labels when showUnits = true
+			this.unitLocation_(this.unitLocation);
+		} {
+			drawGrid.x.labelsShowUnits = false;
+			drawGrid.y.labelsShowUnits = false;
+			if(labelXIsUnits) { this.labelX_(nil) };
+			if(labelYIsUnits) { this.labelY_(nil) };
+		};
+	}
+	unitLocation_ { |location|
+		var xUnits, yUnits;
+		switch(location,
+			\ticks, {
+				if(showUnits) {
+					drawGrid.x.labelsShowUnits = true;
+					drawGrid.y.labelsShowUnits = true;
+				};
+				if(labelXIsUnits) { this.labelX = nil };
+				if(labelYIsUnits) { this.labelY = nil };
+			},
+			\axis, {
+				drawGrid.x.labelsShowUnits = false;
+				drawGrid.y.labelsShowUnits = false;
+
+				xUnits = drawGrid.x.grid.spec.units;
+				yUnits = drawGrid.y.grid.spec.units;
+
+				if(showUnits) {
+					// don't update with empty units or overwrite and explictly set label
+					if(xUnits.isEmpty.not and: {
+						this.labelX.isNil or: { labelXIsUnits }
+					}) {
+						this.labelX_(xUnits);
+						labelXIsUnits = true;
+					};
+
+					if(yUnits.isEmpty.not and: {
+						this.labelY.isNil or: { labelYIsUnits }
+					}) {
+						this.labelY_(yUnits);
+						labelYIsUnits = true;
+					};
+				};
+			}, {
+				"Plot:-unitLocation should be \ticks or \axis".warn;
+				^this
+			}
+		);
+		unitLocation = location;
 	}
 
 	draw {
@@ -137,22 +346,30 @@ Plot {
 	}
 
 	drawLabels {
-		var sbounds;
-		if(gridOnX and: { labelX.notNil }) {
-			sbounds = try { labelX.bounds(font) } ? 0;
-			Pen.stringAtPoint(labelX,
-				plotBounds.right - sbounds.width @ plotBounds.bottom,
-				font,
-				fontColor
-			)
+		var lbounds, tklabelHang;
+
+		if(labelX.notNil and: { gridOnX and: { drawGrid.x.labelsHiddenBySize.not } }) {
+			try {
+				lbounds = labelX.bounds(labelFont);
+				tklabelHang = max(drawGrid.x.labelOverhang[3], 0);
+				Pen.stringCenteredIn(labelX,
+					lbounds.center_(
+						plotBounds.center.x @ (plotBounds.bottom + tklabelHang + labelMargin + (lbounds.height/2))
+					), labelFont, labelFontColor
+				);
+			};
 		};
-		if(gridOnY and: { labelY.notNil }) {
-			sbounds = try { labelY.bounds(font) } ? 0;
-			Pen.stringAtPoint(labelY,
-				plotBounds.left - sbounds.width - 3 @ plotBounds.top,
-				font,
-				fontColor
-			)
+
+		if(labelY.notNil and: { gridOnY and: { drawGrid.y.labelsHiddenBySize.not } }) {
+			try {
+				lbounds = labelY.bounds(labelFont);
+				tklabelHang = max(drawGrid.y.labelOverhang[0], 0);
+				Pen.push;
+				Pen.translate(plotBounds.left - tklabelHang - labelMargin - (lbounds.height/2), plotBounds.center.y);
+				Pen.rotateDeg(-90);
+				Pen.stringCenteredIn(labelY, lbounds.center_(0@0), labelFont, labelFontColor);
+				Pen.pop;
+			};
 		};
 	}
 
@@ -194,25 +411,15 @@ Plot {
 				ycoord.flop.do { |y, i|
 					var mode = plotMode.wrapAt(i);
 					Pen.beginPath;
+					Pen.fillColor = plotColor.wrapAt(i);
+					Pen.strokeColor = plotColor.wrapAt(i);
 					this.perform(mode, xcoord, y);
-					if (this.needsPenFill(mode)) {
-						Pen.fillColor = plotColor.wrapAt(i);
-						Pen.fill
-					} {
-						Pen.strokeColor = plotColor.wrapAt(i);
-						Pen.stroke
-					}
 				}
 			} {
 				Pen.beginPath;
 				Pen.strokeColor = plotColor.at(0);
-				Pen.fillColor= plotColor.at(0);
+				Pen.fillColor = plotColor.at(0);
 				this.perform(plotMode.at(0), xcoord, ycoord);
-				if (this.needsPenFill(plotMode.at(0))) {
-					Pen.fill
-				} {
-					Pen.stroke
-				}
 			};
 			Pen.joinStyle = 0;
 		};
@@ -224,26 +431,68 @@ Plot {
 		Pen.moveTo(x.first @ y.first);
 		y.size.do { |i|
 			Pen.lineTo(x[i] @ y[i]);
-		}
+		};
+		Pen.stroke;
 	}
 
-	points { |x, y|
-		var size = min(bounds.width / value.size * 0.25, 4);
+	lines { |x, y| this.linear(x, y) } // synonym for linear
+
+	stems { |x, y|
+		var ycoord0 = plotBounds.bottom - (spec.warp.unmap(0) * plotBounds.height);
+
 		y.size.do { |i|
-			Pen.addArc(x[i] @ y[i], 0.5, 0, 2pi);
-			if(size > 2) { Pen.addArc(x[i] @ y[i], size, 0, 2pi); };
-		}
+			Pen.moveTo(x[i] @ y[i]);
+			Pen.lineTo(x[i] @ ycoord0);
+		};
+		Pen.stroke;
 	}
 
-	plines { |x, y|
-		var size = min(bounds.width / value.size * 0.25, 3);
-		Pen.moveTo(x.first @ y.first);
+	dots { |x, y, radius, fill = true|
+		var rect;
+
+		radius = radius ?? max(1, min(2, bounds.width / value.size * 0.25));
+		rect = Rect(0, 0, radius * 2, radius * 2);
+
 		y.size.do { |i|
-			var p = x[i] @ y[i];
-			Pen.lineTo(p);
-			Pen.addArc(p, size, 0, 2pi);
-			Pen.moveTo(p);
-		}
+			Pen.addOval(rect.left_(x[i] - radius).top_(y[i] - radius));
+		};
+		if(fill) { Pen.fill } { Pen.stroke };
+	}
+
+	// points is a special case: unfilled -dots with a dot at the center
+	points { |x, y, radius|
+		radius = radius ?? max(1, min(3, bounds.width / value.size * 0.25));
+
+		this.dots(x, y, radius, fill: false);
+
+		// only draw center point if circle is large enough
+		if(radius > 1.5) {
+			this.dots(x, y, radius: 0.5, fill: true);
+		};
+	}
+
+	plines { |x, y, radius|
+		this.lines(x, y);
+		// call dots not points because we don't need the center dot
+		this.dots(x, y, radius, fill: false);
+	}
+
+	pstems { |x, y, radius|
+		var ycoord0 = plotBounds.bottom - (spec.warp.unmap(0) * plotBounds.height);
+
+		radius = radius ?? min(2, bounds.width / value.size * 0.25);
+		this.stems(x, y + (radius * (ycoord0-y).sign));
+		this.dots(x, y, radius, fill: false);
+	}
+
+	dlines { |x, y, radius|
+		this.lines(x, y);
+		this.dots(x, y, radius, fill: true);
+	}
+
+	dstems { |x, y, radius|
+		this.stems(x, y);
+		this.dots(x, y, radius, fill: true);
 	}
 
 	levels { |x, y|
@@ -251,7 +500,8 @@ Plot {
 		y.size.do { |i|
 			Pen.moveTo(x[i] @ y[i]);
 			Pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
-		}
+		};
+		Pen.stroke
 	}
 
 	steps { |x, y|
@@ -260,10 +510,11 @@ Plot {
 		y.size.do { |i|
 			Pen.lineTo(x[i] @ y[i]);
 			Pen.lineTo(x[i + 1] ?? { plotBounds.right } @ y[i]);
-		}
+		};
+		Pen.stroke;
 	}
 
-	bars { |x, y |
+	bars { |x, y|
 		Pen.smoothing_(false);
 		y.size.do { |i|
 			var p = x[i] @ y[i];
@@ -276,11 +527,34 @@ Plot {
 			} {
 				Pen.addRect(Rect(x[i] + gap, centery, nextx - x[i] - ( 2 * gap), rely))
 			}
-		}
+		};
+		Pen.fill
+	}
+
+	filled { |x, y|
+		var ycoord0 = plotBounds.bottom - (spec.warp.unmap(0) * plotBounds.height);
+
+		Pen.moveTo(x.last @ ycoord0);
+		Pen.lineTo(x.first @ ycoord0);
+		y.size.do { |i|
+			Pen.lineTo(x[i] @ y[i]);
+		};
+		Pen.lineTo(x.last @ ycoord0);
+		Pen.fill;
+	}
+
+	pfilled { |x, y, radius|
+		this.filled(x, y);
+		// call dots not points because we don't need the center dot
+		this.dots(x, y, radius, fill: false);
+	}
+
+	dfilled { |x, y, radius|
+		this.filled(x, y);
+		this.dots(x, y, radius, fill: true);
 	}
 
 	// editing
-
 
 	editDataIndex { |index, x, y, plotIndex|
 		// WARNING: assuming index is in range!
@@ -368,10 +642,6 @@ Plot {
 		^#[\levels, \steps, \bars].includesAny(plotMode)
 	}
 
-	needsPenFill { |pMode|
-		^#[\bars].includes(pMode)
-	}
-
 	getIndex { |x|
 		var ycoord = this.dataCoordinates;
 		var xcoord = this.domainCoordinates(ycoord.size);
@@ -409,6 +679,9 @@ Plot {
 		font = font.copy;
 		font.size = max(1, font.size + val);
 		this.font = font;
+		labelFont = labelFont.copy;
+		labelFont.size = max(1, labelFont.size + val);
+		this.labelFont = labelFont;
 		drawGrid.clearCache;
 	}
 	copy {
@@ -446,46 +719,52 @@ Plot {
 }
 
 
-
 Plotter {
 
-	var <>name, <>bounds, <>parent;
+	var <>name;
+	var <>bounds, <>parent;
 	var <value, <data, <domain;
 	var <plots, <specs, <domainSpecs, plotColor;
 	var <cursorPos, plotMode, <>editMode = false, <>normalized = false;
 	var <>resolution = 1, <>findSpecs = true, <superpose = false;
 	var modes, <interactionView;
 	var <editPlotIndex, <editPos;
-
 	var <>drawFunc, <>editFunc;
-	var <gui;
+	var <showUnits = true, <unitLocation = \axis; // \ticks or \axis
+	var axisLabelX, axisLabelY;
 
 	*new { |name, bounds, parent|
 		^super.newCopyArgs(name).makeWindow(parent, bounds)
 	}
 
 	makeWindow { |argParent, argBounds|
-		var btnBounds;
 		parent = argParent ? parent;
 		bounds = argBounds ? bounds;
+
 		if(parent.isNil) {
 			parent = Window.new(name ? "Plot", bounds ? Rect(100, 200, 400, 300));
-			bounds = parent.view.bounds.insetBy(8);
+			bounds = parent.view.bounds.insetBy(5);
+			parent.background_(QtGUI.palette.window);
 			interactionView = UserView.new(parent, bounds);
 
 			interactionView.drawFunc = { this.draw };
 			parent.front;
 			parent.onClose = { parent = nil };
-
 		} {
 			bounds = bounds ?? { parent.bounds.moveTo(0, 0) };
 			interactionView = UserView.new(parent, bounds);
 			interactionView.drawFunc = { this.draw };
 		};
-		modes = [\points, \levels, \linear, \plines, \steps, \bars].iter.loop;
-		this.plotMode = \linear;
-		this.plotColor = Color.black;
+		this.prSetUpInteractionView;
 
+		modes = [\points, \dots, \levels, \steps, \lines, \plines, \dlines, \stems, \pstems, \dstems, \filled, \pfilled, \dfilled, \bars].iter.loop;
+		this.plotMode = \linear;
+		this.plotColor = GUI.skins.plot.plotColor;
+		// at this point no values are set, so no Plots have been created
+	}
+
+	prSetUpInteractionView {
+		// set up interactionView
 		interactionView
 		.background_(Color.clear)
 		.focusColor_(Color.clear)
@@ -513,7 +792,6 @@ Plotter {
 					if(this.numFrames < 200) { this.refresh };
 				};
 				editPos = x @ y;  // new Point instead of cursorPos!
-
 			};
 			if(modifiers.isAlt) { this.postCurrentValue(x, y) };
 		})
@@ -560,7 +838,6 @@ Plotter {
 					},*/
 
 					// normalize
-
 					$n, {
 						if(normalized) {
 							this.specs = specs.collect(_.normalize)
@@ -570,7 +847,6 @@ Plotter {
 						};
 						normalized = normalized.not;
 					},
-
 					// toggle grid
 					$g, {
 						plots.do { |x| x.gridOnY = x.gridOnY.not }
@@ -599,7 +875,8 @@ Plotter {
 				);
 				parent.refresh;
 			};
-		});
+		}) // end keyDownAction_
+		;
 	}
 
 	value_ { |arrays|
@@ -615,6 +892,7 @@ Plotter {
 			this.calcSpecs(separately, minval, maxval, defaultRange);
 		};
 		this.updatePlots;
+		this.updatePlotBounds;
 		if(refresh) { this.refresh };
 	}
 
@@ -654,17 +932,26 @@ Plotter {
 
 	superpose_ { |flag|
 		var dom, domSpecs;
+		if(flag and: { value.isRectangular.not }) {
+			"Plotter can't superpose unequally sized arrays.".warn;
+			^this
+		};
+
 		dom = domain.copy;
 		domSpecs = domainSpecs.copy;
 
 		superpose = flag;
-		if ( value.notNil ){
+		if(value.notNil) {
 			this.setValue(value, false, false);
 		};
 
 		// for individual plots, restore previous domain state
 		this.domain_(dom);
-		if (superpose.not) { this.domainSpecs_(domSpecs) };
+		if (superpose.not) {
+			this.domainSpecs_(domSpecs);
+		};
+		this.axisLabelX !? { this.axisLabelX_(this.axisLabelX) };
+		this.axisLabelY !? { this.axisLabelY_(this.axisLabelY) };
 		this.refresh;
 	}
 
@@ -710,8 +997,9 @@ Plotter {
 		plots.do { |plot, i|
 			plot.bounds_(
 				Rect(bounds.left, distY * i + bounds.top, bounds.width, height)
-			)
-		}
+			);
+		};
+		this.refresh;
 	}
 
 	makePlots {
@@ -722,7 +1010,6 @@ Plotter {
 		this.plotColor_(plotColor);
 		this.plotMode_(plotMode);
 		this.updatePlotSpecs;
-		this.updatePlotBounds;
 	}
 
 	updatePlots {
@@ -732,7 +1019,7 @@ Plotter {
 			plots.do { |plot, i|
 				plot.value = data.at(i)
 			}
-		}
+		};
 	}
 
 	updatePlotSpecs {
@@ -764,22 +1051,27 @@ Plotter {
 					plot.domainSpec = domainSpecs.clipAt(i)
 				}
 			}
-		}
+		};
+
+		this.updatePlotBounds;
 	}
 
 	setProperties { |... pairs|
 		pairs.pairsDo { |selector, value|
 			selector = selector.asSetter;
 			plots.do { |x| x.perform(selector, value) }
-		}
+		};
+		this.updatePlotBounds;
 	}
 
 	plotColor_ { |colors|
 		plotColor = colors.as(Array);
-		plots.do { |plt, i|
+		plots.do { |plot, i|
 			// rotate colors to ensure proper behavior with superpose
-			plt.plotColor_(plotColor.rotate(i.neg))
-		}
+			// (so this Plot's color is first in its color array)
+			plot.plotColor_(plotColor.rotate(i.neg))
+		};
+		this.refresh;
 	}
 
 	plotColor {
@@ -789,15 +1081,110 @@ Plotter {
 
 	plotMode_ { |modes|
 		plotMode = modes.asArray;
-		plots.do { |plt, i|
-			// rotate modes to ensure proper behavior with superpose
-			plt.plotMode_(plotMode.rotate(i.neg))
-		}
+		plots.do { |plot, i|
+			// rotate to ensure proper behavior with superpose
+			plot.plotMode_(plotMode.rotate(i.neg))
+		};
+		this.refresh;
 	}
 
 	plotMode {
 		var first = plotMode.first;
 		^if (plotMode.every(_ == first)) { first } { plotMode };
+	}
+
+	axisLabelX_ { |labels|
+		// need to store as Plotter inst var to restore from array after superpose
+		axisLabelX = if(labels.isKindOf(Array)) {
+			labels.collect(_ !? (_.asString))
+		} { [ labels !? (_.asString) ] };
+		plots.do { |plot, i|
+			// rotate to ensure proper behavior with superpose
+			plot.labelX_(axisLabelX.rotate(i.neg)[0])
+		};
+		this.updatePlotBounds;
+	}
+
+	axisLabelX {
+		^axisLabelX !? {
+			if (axisLabelX.every(_ == axisLabelX.first)) { axisLabelX.first } { axisLabelX };
+		};
+	}
+
+	axisLabelY_ { |labels|
+		axisLabelY = if(labels.isKindOf(Array)) {
+			labels.collect(_ !? (_.asString))
+		} { [ labels !? (_.asString) ] };
+		plots.do { |plot, i|
+			// rotate to ensure proper behavior with superpose
+			plot.labelY_(axisLabelY.rotate(i.neg)[0])
+		};
+		this.updatePlotBounds;
+	}
+
+	axisLabelY {
+		^axisLabelY !? {
+			if (axisLabelY.every(_ == axisLabelY.first)) { axisLabelY.first } { axisLabelY };
+		};
+	}
+
+	showUnits_ { |bool|
+		showUnits = bool;
+		this.setProperties(\showUnits, bool);
+	}
+
+	unitLocation_ { |location|
+		if(location == \ticks or: { location == \axis }) {
+			this.setProperties(\unitLocation, location);
+			unitLocation = location;
+		} {
+			"Plot:-unitLocation should be \ticks or \axis".warn;
+		};
+	}
+
+	// grids
+
+	// Assume all subplot grids have the same properties for a given axis
+	getGridProperty { |axis, property|
+		^plots[0].drawGrid.perform(axis).perform(property)
+	}
+
+	setGridProperties { |axis ... propertyPairs|
+		var drawGrid;
+		plots.do { |plot|
+			drawGrid = plot.drawGrid.perform(axis);
+			drawGrid.clearCache;
+			propertyPairs.pairsDo { |property, value|
+				drawGrid.perform(property.asSetter, value)
+			};
+		};
+		this.updatePlotBounds;
+	}
+
+	// Convenience methods for setting grid axes' properties together
+	drawGridBoundingRect_ { |bool|
+		if(bool) {
+			// bounding lines are mutually exclusive - setting one to true sets others to false.
+			[\x, \y].do{ |ax| this.setGridProperties(ax, \drawBoundingRect, true) };
+		} { // false implies no bounding lines
+			[\x, \y].do{ |ax|
+				this.setGridProperties(ax,
+					\drawBoundingRect, false, \drawBoundingLines, false, \drawBaseLine, false
+				);
+			};
+		}
+	}
+	drawGridBaseLines_ { |bool|
+		if(bool) {
+			// bounding lines are mutually exclusive - setting one to true sets others to false.
+			[\x, \y].do{ |ax| this.setGridProperties(ax, \drawBaseLine, true) };
+		} { // false implies no bounding lines
+			[\x, \y].do{ |ax|
+				this.setGridProperties(ax,
+					\drawBoundingRect, false, \drawBoundingLines, false, \drawBaseLine, false
+				);
+			};
+		}
 	}
 
 	// specs
@@ -901,34 +1288,42 @@ Plotter {
 
 
 + ArrayedCollection {
-	plot { |name, bounds, discrete = false, numChannels, minval, maxval, separately = true|
-		var array, plotter;
+	plot { |name, bounds, discrete = false, numChannels, minval, maxval, separately = true, parent|
+		var array, plotter, depth, hasSubArrays;
 		array = this.as(Array);
 
-		if(array.maxDepth > 3) {
-			"Cannot currently plot an array with more than 3 dimensions".warn;
+		depth = array.maxDepth;
+		hasSubArrays = depth > 1;
+
+		if(depth > 2) {
+			"Cannot currently plot an array with more than 2 dimensions".warn;
 			^nil
 		};
-		plotter = Plotter(name, bounds);
-		if(discrete) { plotter.plotMode = \points };
+
+		plotter = Plotter(name, bounds, parent);
+		if(discrete) {
+			plotter.plotMode = \points
+		} {
+			// if lines, show discrete values with dots if data density is low enough
+			if(array.size < (Window.screenBounds.width / 2.5)) {
+				plotter.plotMode = \dlines;
+			}
+		};
 
 		numChannels !? { array = array.unlace(numChannels) };
 		array = array.collect {|elem, i|
-			if (elem.isKindOf(Env)) {
-				elem.asMultichannelSignal.flop
-			} {
-				if(elem.isNil) {
-					Error("cannot plot array: non-numeric value at index %".format(i)).throw
-				};
-				elem
-			}
+			case {elem.isKindOf(Env)}		{elem.asMultichannelSignal.flop}
+				 {elem.isKindOf(Wavetable)} {elem.asSignal}
+				 {elem.isNil}				{Error("Cannot plot array: non-numeric value at index %".format(i)).throw}
+  				 {hasSubArrays}				{elem.asArray} 
+			  	 {elem};
 		};
 
 		plotter.setValue(
 			array,
 			findSpecs: true,
-			separately: separately,
 			refresh: true,
+			separately: separately,
 			minval: minval,
 			maxval: maxval
 		);
@@ -941,95 +1336,122 @@ Plotter {
 	plotHisto { arg steps = 100, min, max;
 		var histo = this.histo(steps, min, max);
 		var plotter = histo.plot;
-		plotter.domainSpecs = [[min ?? { this.minItem }, max ?? { this.maxItem }].asSpec];
-		plotter.specs = [[0, histo.maxItem, \linear, 1].asSpec];
-		plotter.plotMode = \steps;
+		var minmax = [min ?? { this.minItem }, max ?? { this.maxItem }];
+		var binwidth = minmax[1] - minmax[0] / steps;
+
 		^plotter
+		.domainSpecs_([minmax.asSpec])
+		.specs_([[0, histo.maxItem * 1.05, \linear, 1].asSpec])
+		.plotMode_(\steps)
+		.axisLabelY_("Occurrences")
+		.axisLabelX_("Bins")
+		.domain_(binwidth * (0..steps-1) + minmax[0])
+		;
 	}
 }
 
 
 + Function {
-	plot { |duration = 0.01, target, bounds, minval, maxval, separately = false|
+	plot { |duration = 0.01, target, bounds, minval, maxval, separately = false, parent|
+		var server, plotter, action;
+		var name = this.asCompileString;
 
-		var name = this.asCompileString, plotter, action;
-		if(name.size > 50 or: { name.includes(Char.nl) }) { name = "function plot" };
-		plotter = Plotter(name, bounds);
+		if(name.size > 50 or: { name.includes(Char.nl) }) { name = "Function" };
+
+		plotter = Plotter(name, bounds, parent);
+
+		// init plot data in case function data is delayed (e.g. server booting)
 		plotter.value = [0.0];
+
 		target = target.asTarget;
+		server = target.server;
 		action = { |array, buf|
 			var numChan = buf.numChannels;
-			{
+			var numFrames = buf.numFrames;
+			var frameDur = buf.sampleRate.reciprocal;
+
+			defer {
 				plotter.setValue(
-					array.unlace(numChan).collect(_.drop(-1)),
+					array.unlace(numChan),
 					findSpecs: true,
-					separately: separately,
 					refresh: false,
+					separately: separately,
 					minval: minval,
 					maxval: maxval
 				);
-				plotter.domainSpecs = ControlSpec(0, duration, units: "s");
-				plotter.refresh;
-			}.defer
+
+				plotter.domainSpecs = ControlSpec(0, duration, units: "sec");
+
+				// If individual values might be separated by at least 2.5 px
+				// (based on a plot at full screen width), set the x values (domain)
+				// explicitly for accurate time alignment with grid lines.
+				if(numFrames < (Window.screenBounds.width / 2.5)) {
+					plotter.domain = numFrames.collect(_ * frameDur);
+				};
+				// save vertical space with highly multichannel plots
+				if(numChan > 4) { plotter.axisLabelX_(nil) };
+			};
 		};
 
-		if(target.server.isLocal) {
-			this.loadToFloatArray(duration, target, action:action)
+		if(server.isLocal) {
+			this.loadToFloatArray(duration, target, action: action)
 		} {
-			this.getToFloatArray(duration, target, action:action)
+			this.getToFloatArray(duration, target, action: action)
 		};
 
 		^plotter
 	}
 
-	plotAudio { |duration = 0.01, minval = -1, maxval = 1, server, bounds|
-		^this.plot(duration, server, bounds, minval, maxval)
+	plotAudio { |duration = 0.01, minval = -1, maxval = 1, server, bounds, parent|
+		^this.plot(duration, server, bounds, minval, maxval, parent: parent)
 	}
 }
 
 + Bus {
-	plot { |duration = 0.01, bounds, minval, maxval, separately = false|
+	plot { |duration = 0.01, bounds, minval, maxval, separately = false, parent|
 		if (this.rate == \audio, {
-			^{ InFeedback.ar(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately);
+			^{ InFeedback.ar(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately, parent);
 		},{
-			^{ In.kr(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately);
+			^{ In.kr(this.index, this.numChannels) }.plot(duration, this.server, bounds, minval, maxval, separately, parent);
 		});
 	}
 
-	plotAudio { |duration = 0.01, minval = -1, maxval = 1, bounds|
-		^this.plot(duration, bounds, minval, maxval)
+	plotAudio { |duration = 0.01, minval = -1, maxval = 1, bounds, parent|
+		^this.plot(duration, bounds, minval, maxval, parent: parent)
 	}
 }
 
 + Wavetable {
-	plot { |name, bounds, minval, maxval|
-		^this.asSignal.plot(name, bounds, minval: minval, maxval: maxval)
+	plot { |name, bounds, minval, maxval, parent|
+		^this.asSignal.plot(name, bounds, minval: minval, maxval: maxval, parent: parent)
 	}
 }
 
 + Buffer {
-	plot { |name, bounds, minval, maxval, separately = false|
+	plot { |name, bounds, minval, maxval, separately = false, parent|
 		var plotter, action;
 		if(server.serverRunning.not) { "Server % not running".format(server).warn; ^nil };
 		if(numFrames.isNil) { "Buffer not allocated, can't plot data".warn; ^nil };
 
 		plotter = [0].plot(
 			name ? "Buffer plot (bufnum: %)".format(this.bufnum),
-			bounds, minval: minval, maxval: maxval
+			bounds, minval: minval, maxval: maxval, parent: parent
 		);
 
 		action = { |array, buf|
+			var unitStr = if (buf.numChannels == 1) { "samples" } { "frames" };
 			{
 				plotter.setValue(
 					array.unlace(buf.numChannels),
 					findSpecs: true,
-					separately: separately,
 					refresh: false,
+					separately: separately,
 					minval: minval,
 					maxval: maxval
 				);
-				plotter.domainSpecs = ControlSpec(0.0, buf.numFrames, units:"frames");
-				plotter.refresh;
+				plotter.domainSpecs = ControlSpec(0.0, buf.numFrames, units: unitStr);
+				// save vertical space with highly multichannel buffer plots
+				if(buf.numChannels > 4) { plotter.axisLabelX_(nil) };
 			}.defer
 		};
 
@@ -1045,18 +1467,17 @@ Plotter {
 
 
 + Env {
-	plot { |size = 400, bounds, minval, maxval, name|
-		var plotLabel = if (name.isNil) { "envelope plot" } { name };
-		var plotter = [this.asMultichannelSignal(size).flop]
-		.plot(name, bounds, minval: minval, maxval: maxval);
+	plot { |size = 400, bounds, minval, maxval, name, parent|
+		var plotLabel = if (name.isNil) { "Envelope" } { name };
+		var plotter = this.asMultichannelSignal(size)
+		.plot(name, bounds, minval: minval, maxval: maxval, parent: parent);
 
-		var duration     = this.duration.asArray;
+		var duration = this.duration.asArray;
 		var channelCount = duration.size;
 
 		var totalDuration = if (channelCount == 1) { duration } { duration.maxItem ! channelCount };
 
-		plotter.domainSpecs = totalDuration.collect(ControlSpec(0, _, units: "s"));
-		plotter.setProperties(\labelX, "time");
+		plotter.domainSpecs = totalDuration.collect(ControlSpec(0, _));
 		plotter.refresh;
 		^plotter
 	}
@@ -1064,9 +1485,9 @@ Plotter {
 
 + AbstractFunction {
 	plotGraph { arg n=500, from = 0.0, to = 1.0, name, bounds, discrete = false,
-		numChannels, minval, maxval, separately = true;
+		numChannels, minval, maxval, separately = true, parent;
 		var array = Array.interpolation(n, from, to);
 		var res = array.collect { |x| this.value(x) };
-		^res.plot(name, bounds, discrete, numChannels, minval, maxval, separately)
+		^res.plot(name, bounds, discrete, numChannels, minval, maxval, separately, parent)
 	}
 }

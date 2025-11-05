@@ -322,7 +322,9 @@ QuarkDetailView {
 				this.pushRow("Dependencies", dependencies.collect(_.asString).join(Char.nl));
 			};
 			if(isInstalled or: {
-				isDownloaded and: {model.data['helpdoc'].isString}
+				isDownloaded and: {
+					#['schelp', 'helpdoc'].any { |key| model.data[key].isString }
+				}
 			}, {
 				this.pushRow("Help", makeBtn.value("Open help", { model.help }));
 			});
@@ -473,7 +475,7 @@ QuarkDetailView {
 		if(tags.size == 0 or: {
 			remoteLatest != model.git.shaForTag(tags.first);
 		}, {
-			versions.add([remoteLatest, "Latest master"]);
+			versions.add([remoteLatest, "Latest default"]);
 		});
 
 		// working copy

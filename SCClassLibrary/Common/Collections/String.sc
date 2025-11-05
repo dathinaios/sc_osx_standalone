@@ -110,6 +110,21 @@ String[char] : RawArray {
 	isString { ^true }
 	asString { ^this }
 	asCompileString {
+		var out;
+		// empirically, the compiler limits `"literals"` to 8188 characters
+		// 8180 leaves a little headroom
+		^if(this.size <= 8180) {
+			this.prAsCompileString
+		} {
+			out = "[";
+			this.clump(8180).do { |substr, i|
+				if(i > 0) { out = out ++ ", " };
+				out = out ++ substr.prAsCompileString;
+			};
+			out ++ "].join"
+		}
+	}
+	prAsCompileString {
 		_String_AsCompileString
 		^this.primitiveFailed
 	}
@@ -130,6 +145,7 @@ String[char] : RawArray {
 	format { arg ... items; ^this.prFormat( items.collect(_.asString) ) }
 	prFormat { arg items; _String_Format ^this.primitiveFailed }
 	matchRegexp { arg string, start = 0, end; _String_Regexp ^this.primitiveFailed }
+	replaceRegexp { |regex, with| _String_ReplaceRegex ^this.primitiveFailed }
 
 	fformat { arg ... args;
 		var str, resArgs, val, func;
@@ -391,20 +407,20 @@ String[char] : RawArray {
 	}
 	loadRelative { arg warn = true, action;
 		var path = thisProcess.nowExecutingPath;
-		if(path.isNil) { Error("can't load relative to an unsaved file").throw};
+		if(path.isNil) { Error("can't load relative to an unsaved file.\nPath to resolve: \"%\"\n".format(this)).throw };
 		if(path.basename == this) { Error("should not load a file from itself").throw };
 		^(path.dirname ++ thisProcess.platform.pathSeparator ++ this).loadPaths(warn, action)
 	}
 	resolveRelative {
 		var path, caller;
 		caller = thisMethod.getBackTrace.caller.functionDef;
-		if(caller.isKindOf(Method) && (caller != Interpreter.findMethod(\interpretPrintCmdLine)), {
+		if(caller.isKindOf(Method) && (caller != Interpreter.findMethod(\interpretPrintCmdLine))) {
 			path = caller.filenameSymbol.asString;
-		}, {
+		} {
 			path = thisProcess.nowExecutingPath;
-		});
-		if(this[0] == thisProcess.platform.pathSeparator, {^this});
-		if(path.isNil) { Error("can't resolve relative to an unsaved file").throw};
+		};
+		if(this[0] == thisProcess.platform.pathSeparator) { ^this };
+		if(path.isNil) { Error("can't resolve relative to an unsaved file.\nPath to resolve: \"%\"\n".format(this)).throw };
 		^(path.dirname ++ thisProcess.platform.pathSeparator ++ this)
 	}
 	include {

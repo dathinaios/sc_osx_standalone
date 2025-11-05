@@ -38,6 +38,7 @@ ServerOptions {
 
 	var <>memoryLocking;
 	var <>threads; // for supernova
+	var <>threadPinning; // for supernova
 	var <>useSystemClock;  // for supernova
 
 	var <numPrivateAudioBusChannels;
@@ -47,7 +48,7 @@ ServerOptions {
 	var <>reservedNumBuffers;
 	var <>pingsBeforeConsideredDead;
 
-	var <>maxLogins;
+	var <maxLogins;
 
 	var <>recHeaderFormat;
 	var <>recSampleFormat;
@@ -88,6 +89,7 @@ ServerOptions {
 				remoteControlVolume: false,
 				memoryLocking: false,
 				threads: nil,
+				threadPinning: nil, // default value chosen by Supernova
 				useSystemClock: true,
 				numPrivateAudioBusChannels: 1020, // see corresponding setter method below
 				reservedNumAudioBusChannels: 0,
@@ -95,7 +97,7 @@ ServerOptions {
 				reservedNumBuffers: 0,
 				pingsBeforeConsideredDead: 5,
 				maxLogins: 1,
-				recHeaderFormat: "aiff",
+				recHeaderFormat: "wav",
 				recSampleFormat: "float",
 				recChannels: 2,
 				recBufSize: nil,
@@ -215,8 +217,13 @@ ServerOptions {
 			o = o ++ " -L";
 		});
 		if (threads.notNil, {
-			if (Server.program.asString.endsWith("supernova")) {
+			if (Server.program.asString.contains("supernova")) {
 				o = o ++ " -T " ++ threads;
+			}
+		});
+		if (threadPinning.notNil, {
+			if (Server.program.asString.contains("supernova")) {
+				o = o ++ " -y " ++ threadPinning.asBoolean.asInteger;
 			}
 		});
 		if (useSystemClock, {
@@ -264,6 +271,13 @@ ServerOptions {
 
 	recalcChannels {
 		numAudioBusChannels = numPrivateAudioBusChannels + numInputBusChannels + numOutputBusChannels;
+	}
+
+	maxLogins_ { |logins|
+		if(logins > 32) {
+			Error("maxLogins should be <= 32, tried to set to " ++ logins).throw;
+		};
+		maxLogins = logins;
 	}
 
 	*prListDevices {
@@ -350,7 +364,7 @@ Server {
 	var <defaultGroup, <defaultGroups;
 
 	var <syncThread, <syncTasks;
-	var <window, <>scopeWindow, <emacsbuf;
+	var <window, <>scopeWindow, <serverMeter, <emacsbuf, <nodeTreeView;
 	var <volume, <recorder, <statusWatcher;
 	var <pid, serverInterface;
 	var pidReleaseCondition;
@@ -389,14 +403,8 @@ Server {
 	}
 
 	*remote { |name, addr, options, clientID|
-		var result;
-		result = this.new(name, addr, options, clientID);
-		if(options.protocol == \tcp) {
-			addr.tryConnectTCP({ result.startAliveThread }, nil, 20)
-		} {
-			result.startAliveThread;
-		};
-		^result;
+		var remoteServer = this.new(name, addr, options, clientID);
+		^remoteServer.connectToServerAddr({ remoteServer.startAliveThread })
 	}
 
 	init { |argName, argAddr, argOptions, argClientID|
@@ -785,18 +793,18 @@ Server {
 		condition.wait
 	}
 
-	waitForBoot { |onComplete, limit = 100, onFailure|
+	waitForBoot { |onComplete, limit = 100, onFailure, clock|
 		// onFailure.true: why is this necessary?
 		// this.boot also calls doWhenBooted.
 		// doWhenBooted prints the normal boot failure message.
 		// if the server fails to boot, the failure error gets posted TWICE.
 		// So, we suppress one of them.
 		if(this.serverRunning.not) { this.boot(onFailure: true) };
-		this.doWhenBooted(onComplete, limit, onFailure);
+		this.doWhenBooted(onComplete, limit, onFailure, clock);
 	}
 
-	doWhenBooted { |onComplete, limit=100, onFailure|
-		statusWatcher.doWhenBooted(onComplete, limit, onFailure)
+	doWhenBooted { |onComplete, limit=100, onFailure, clock|
+		statusWatcher.doWhenBooted(onComplete, limit, onFailure, clock)
 	}
 
 	ifRunning { |func, failFunc|
@@ -964,7 +972,8 @@ Server {
 		}, onFailure: onFailure ? false);
 
 		if(remoteControlled) {
-			"You will have to manually boot remote server.".postln;
+			"*** %: can't boot a remote server - "
+			"You will have to boot it on its machine.".postf(this);
 		} {
 			this.prPingApp({
 				this.quit;
@@ -1045,12 +1054,18 @@ Server {
 			// in case the server takes more time to boot
 			// we increase the number of attempts for tcp connection
 			// in order to minimize the chance of timing out
-			if(options.protocol == \tcp, { addr.tryConnectTCP(onComplete, nil, 20) }, onComplete);
+			this.connectToServerAddr(onComplete, maxAttempts: 20);
 		}
 	}
 
+	connectToServerAddr { |onComplete, maxAttempts = 10|
+		if(options.protocol == \tcp, {
+			addr.tryConnectTCP(onComplete, nil, maxAttempts)
+		}, onComplete)
+	}
+
 	reboot { |func, onFailure| // func is evaluated when server is off
-		if(isLocal.not) { "can't reboot a remote server".postln; ^this };
+		if(remoteControlled) { "*** %: can't reboot a remote server".postf(this); ^this };
 		if(statusWatcher.serverRunning and: { this.unresponsive.not }) {
 			this.quit({
 				func.value;
@@ -1101,6 +1116,10 @@ Server {
 	quit { |onComplete, onFailure, watchShutDown = true|
 		var func;
 
+		if (remoteControlled) {
+			"*** %: can't quit a remote server.\n\n".postf(this);
+			^this
+		};
 		addr.sendMsg("/quit");
 
 		if(this.unresponsive) {
@@ -1329,6 +1348,30 @@ Server {
 		}
 	}
 
+	rtMemoryStatus { |action|
+		var resp, freeKb, done = false;
+		if (this.serverRunning.not) {
+			"server '%' not running".format(this.name).warn;
+			^this
+		};
+		resp = OSCFunc({ |msg| 
+			done = true;
+			if (action.notNil) { action.value(*msg.drop(1)) } {
+				freeKb = msg[1] / 1024;
+				"Used RT memory: % kb".format(options.memSize - freeKb).postln;
+				"Free RT memory: % kb".format(freeKb).postln;
+				"Largest free chunk: % kb".format(msg[2] / 1024).postln;
+			}
+		} , "/rtMemoryStatus.reply", addr).oneShot;
+		addr.sendMsg("/rtMemoryStatus");
+		SystemClock.sched(3, {
+			if(done.not) {
+				resp.free;
+				"Remote server failed to respond to rtMemoryStatus!".warn;
+			};
+		})
+	}
+
 	printOn { |stream|
 		stream << name;
 	}
@@ -1338,7 +1381,7 @@ Server {
 			Server.default, { if(sync_s) { "s" } { "Server.default" } },
 			Server.local,	{ "Server.local" },
 			Server.internal, { "Server.internal" },
-			{ "Server.fromName(" + name.asCompileString + ")" }
+			{ "Server.fromName(" ++ name.asCompileString ++ ")" }
 		);
 		stream << codeStr;
 	}

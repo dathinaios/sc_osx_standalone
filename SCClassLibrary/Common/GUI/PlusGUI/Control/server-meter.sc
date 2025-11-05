@@ -1,7 +1,11 @@
 + Server {
-	meter { |numIns, numOuts|
-		^if( GUI.id == \swing and: { \JSCPeakMeter.asClass.notNil }, {
-			\JSCPeakMeter.asClass.meterServer( this );
-		}, { ServerMeter(this, numIns, numOuts) });
+	meter { |numIns, numOuts, position|
+		if(serverMeter.isNil or: { serverMeter.isClosed }) {
+			serverMeter = ServerMeter(this, numIns, numOuts)
+		} {
+			serverMeter.window.front
+		};
+		position !? { serverMeter.position_(position) };
+		^serverMeter
 	}
 }

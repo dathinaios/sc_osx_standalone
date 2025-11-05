@@ -6,9 +6,10 @@ Modified from [the linux version](https://github.com/miguel-negrao/scStandalone)
 
 ## Usage
 
-1. Navigate to the downloaded folder from the terminal with `cd location_path_of_sc-osx-standalone-master`.
-2. Unzip the `Frameworks` folder and delete the `zip` file.
-3. Run the standalone with `sh run.sh` script. You should hear some white noise. This is the default sound as defined in `init.scd`.
+1. Download both the source code and `frameworks.zip` from the [latest release](https://github.com/dathinaios/sc_osx_standalone/releases/latest).
+2. Navigate to the downloaded folder from the terminal with `cd location_path_of_sc-osx-standalone-master`.
+3. Move `frameworks.zip` into this directory, unzip it to extract the `Frameworks` folder, then delete the `zip` file.
+4. Run the standalone with `sh run.sh` script. You should hear some white noise. This is the default sound as defined in `init.scd`.
 4. To modify `init.scd` replace the code inside the curly brackets after `waitForBoot` with your own code:
 
           s.waitForBoot{

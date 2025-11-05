@@ -27,6 +27,12 @@ Score {
 		score = score.add(bundle)
 	}
 
+	addSystemSynthDefs {
+		SystemSynthDefs.synthDefs.do { |synthDef|
+			this.add([0, [\d_recv, synthDef.asBytes]])
+		}
+	}
+
 	*playFromFile { arg path, server;
 		var list;
 		list = thisProcess.interpreter.executeFile(path);
@@ -85,7 +91,8 @@ Score {
 					{"Configuration events should have a timestamp of 0.0".warn; ^nil})},
 				{"Configuration events need to be a bundle array: [time, [events]]".warn;
 					^nil})});
-		^this.class.new(sectionlist);
+		// bypass the 'init' method to avoid duplicate default Group
+		^this.class.new.score_(sectionlist).sort;
 	}
 
 	writeOSCFile { arg path, from, to, clock;

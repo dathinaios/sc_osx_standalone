@@ -101,6 +101,9 @@ Pattern : AbstractFunction {
 		var buffer, nodeID, defname;
 		var pattern = if(dur.notNil) { Pfindur(dur, this) } { this };
 
+        headerFormat = headerFormat ?? { server.recHeaderFormat };
+		sampleFormat = sampleFormat ?? { server.recSampleFormat };
+
 		server.waitForBoot {
 			var group, bus, free, monitor;
 
@@ -134,6 +137,7 @@ Pattern : AbstractFunction {
 						(
 							type: \on, id: nodeID, instrument: defname,
 							bus: bus, group: group, addAction: \addAfter,
+							bufnum: buffer,
 							delta: 0,
 							callback: { nodeID = ~id }
 						),
@@ -337,9 +341,9 @@ Pevent : Pattern {
 
 Pbind : Pattern {
 	var <>patternpairs;
-	*new { arg ... pairs;
+	*new { | ... pairs, kwargs|
 		if (pairs.size.odd, { Error("Pbind should have even number of args.\n").throw; });
-		^super.newCopyArgs(pairs)
+		^super.newCopyArgs(pairs ++ kwargs)
 	}
 
 	storeArgs { ^patternpairs }

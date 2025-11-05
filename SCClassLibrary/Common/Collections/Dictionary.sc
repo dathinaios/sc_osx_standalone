@@ -23,7 +23,12 @@ Dictionary : Set {
 		^nil
 	}
 	trueAt { arg key;
-		^this.at(key) ? false
+		var val = this.at(key);
+		if(val.respondsTo(\booleanValue).not) { ^false };
+		^val.booleanValue
+	}
+	falseAt { arg key;
+		^this.trueAt(key).not
 	}
 	add { arg anAssociation;
 		this.put(anAssociation.key, anAssociation.value);
@@ -534,30 +539,31 @@ IdentityDictionary : Dictionary {
 		if(parent.notNil) { stream << "\n.parent_(" <<< parent << ")" };
 	}
 
-	doesNotUnderstand { arg selector ... args;
-		var func;
-		if (know) {
-
-			func = this[selector];
-			if (func.notNil) {
-				^func.functionPerformList(\value, this, args);
-			};
-
-			if (selector.isSetter) {
-				selector = selector.asGetter;
-				if(this.respondsTo(selector)) {
-					warn(selector.asCompileString
-						+ "exists as a method name, so you can't use it as a pseudo-method.")
-				};
-				^this[selector] = args[0];
-			};
-			func = this[\forward];
-			if (func.notNil) {
-				^func.functionPerformList(\value, this, selector, args);
-			};
-			^nil
+	doesNotUnderstand { |selector... args, kwargs|
+		var sel, forward;
+		if (know.not) {
+			^this.superPerformArgs(\doesNotUnderstand, [selector] ++ args, kwargs)
 		};
-		^this.superPerformList(\doesNotUnderstand, selector, args);
+        sel = this[selector];
+		sel !? {
+			^sel.performArgs(\functionPerformList, [\value, this, args], kwargs);
+        };
+
+        if (selector.isSetter) {
+            selector = selector.asGetter;
+            if(this.respondsTo(selector)) {
+                warn(selector.asCompileString
+                    + "exists as a method name, so you can't use it as a pseudo-method.")
+            };
+            ^this[selector] = args[0];
+        };
+
+        forward = this[\forward];
+		forward !? {
+			^forward.performArgs(\functionPerformList, [\value, this, selector, args], kwargs);
+        };
+
+        ^nil
 	}
 
 		// Quant support.
@@ -567,11 +573,14 @@ IdentityDictionary : Dictionary {
 		//	parameter: value, parameter: value, etc.)
 		// If you leave out the nextTimeOnGrid function, fallback to quant/phase/offset.
 
-	nextTimeOnGrid { |clock|
+	nextTimeOnGrid { |clock, referenceBeat|
 		if(this[\nextTimeOnGrid].notNil) {
-			^this[\nextTimeOnGrid].value(this, clock)
+			// 'nextTimeOnGrid' function shouldn't be responsible for
+			// resolving a nil referenceBeat
+			^this[\nextTimeOnGrid].value(this, clock, referenceBeat ?? { thisThread.beats })
 		} {
-			^clock.nextTimeOnGrid(this[\quant] ? 1, (this[\phase] ? 0) - (this[\offset] ? 0))
+			// but anyClock.nextTimeOnGrid is already responsible for that
+			^clock.nextTimeOnGrid(this[\quant] ? 1, (this[\phase] ? 0) - (this[\offset] ? 0), referenceBeat)
 		}
 	}
 	asQuant { ^this.copy }

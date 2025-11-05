@@ -330,7 +330,7 @@ SynthDefControl : SynthControl {
 		NodeProxy.buildProxy = proxy;
 		synthDef = source.buildForProxy(proxy, channelOffset, orderIndex);
 		NodeProxy.buildProxyControl = outerDefControl;
-		outerBuildProxy = outerBuildProxy;
+		NodeProxy.buildProxy = outerBuildProxy;
 
 		rate = synthDef.rate;
 		numChannels = synthDef.numChannels;
@@ -413,6 +413,9 @@ SynthDefControl : SynthControl {
 		bytes = control.bytes; // copy cached data
 	}
 
+	findSpecFor { |controlName|
+		^synthDef.findSpecFor(controlName)
+	}
 	specs {
 		^synthDef.specs
 	}

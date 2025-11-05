@@ -33,9 +33,13 @@ SynthDef {
 		synthDefDir.mkdir;
 	}
 
-	*new { arg name, ugenGraphFunc, rates, prependArgs, variants, metadata;
-		^super.newCopyArgs(name.asSymbol).variants_(variants).metadata_(metadata ?? {()}).children_(Array.new(64))
-			.build(ugenGraphFunc, rates, prependArgs)
+	*new { |name, ugenGraphFunc, rates, prependArgs, variants, metadata|
+	    ^super.newCopyArgs(
+	        name: name.asSymbol,
+	        variants: variants,
+	        metadata: metadata ?? {()},
+	        children: Array(64)
+        ).build(ugenGraphFunc, rates, prependArgs)
 	}
 
 	storeArgs { ^[name, func] }
@@ -46,6 +50,7 @@ SynthDef {
 			this.buildUgenGraph(ugenGraphFunc, rates, prependArgs);
 			this.finishBuild;
 			func = ugenGraphFunc;
+			this.class.changed(\synthDefReady, this);
 		} {
 			UGen.buildSynthDef = nil;
 		}
@@ -333,13 +338,13 @@ SynthDef {
 				file.putFloat(item);
 			};
 
-			allControlNamesTemp = allControlNames.reject { |cn| cn.rate == \noncontrol };
+			allControlNamesTemp = allControlNames.reject { |cn|
+				cn.rate == \noncontrol or: { cn.name.isNil }
+			};
 			file.putInt32(allControlNamesTemp.size);
 			allControlNamesTemp.do { | item |
-				if (item.name.notNil) {
-					file.putPascalString(item.name.asString);
-					file.putInt32(item.index);
-				};
+				file.putPascalString(item.name.asString);
+				file.putInt32(item.index);
 			};
 
 			file.putInt32(children.size);
@@ -663,6 +668,11 @@ SynthDef {
 		lib = SynthDescLib.getLib(libname);
 		desc = lib.readDescFromDef(stream, keepDef, this, metadata);
 		^desc
+	}
+
+	findSpecFor { |controlName|
+		var specs = metadata[\specs];
+		^specs !? { specs[controlName] }
 	}
 
 	specs {

@@ -8,10 +8,16 @@ do
     cd $(dirname "$TARGET")
     TARGET=$(basename "$TARGET")
 done
-# Compute the canonicalized name by finding the physical path 
+# Compute the canonicalized name by finding the physical path
 # for the directory we're in and appending the target file.
 DIR=`pwd -P`
 SCRIPTPATH="$DIR"
+
+# Remove quarantine attributes
+xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/sclang" 2>/dev/null
+xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/scsynth" 2>/dev/null
+xattr -rd com.apple.quarantine "$SCRIPTPATH/QT_PlugIns" 2>/dev/null
+
 # Link the QT PlugIns
 export QT_PLUGIN_PATH="./QT_PlugIns"
 
