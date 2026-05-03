@@ -13,6 +13,14 @@ done
 DIR=`pwd -P`
 SCRIPTPATH="$DIR"
 
+# Strip quarantine attributes so macOS doesn't block the binaries on first run.
+# When distributed as a built .app this is handled at build time by build_app.sh,
+# but when running run.sh directly the files haven't been pre-stripped.
+xattr -rd com.apple.quarantine "$SCRIPTPATH/Frameworks" 2>/dev/null
+xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/sclang" 2>/dev/null
+xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/scsynth" 2>/dev/null
+xattr -rd com.apple.quarantine "$SCRIPTPATH/QT_PlugIns" 2>/dev/null
+
 # Pick a name to namespace the per-app temp dir. When wrapped in a Platypus
 # .app, $SCRIPTPATH points at MyApp.app/Contents/Resources, so we walk up two
 # levels to derive the app name from the bundle.
