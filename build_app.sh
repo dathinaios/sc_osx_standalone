@@ -36,6 +36,11 @@ OUTPUT_APP="$OUTPUT_DIR/$APP_NAME.app"
 
 BUNDLE_ID="org.supercollider.standalone.$(echo "$APP_NAME" | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
 
+ICON_ARG=()
+if [[ ! " ${EXTRA_PLATYPUS_ARGS[*]} " =~ "--app-icon" ]] && [ -f "$REPO/Icon.png" ]; then
+    ICON_ARG=(--app-icon "$REPO/Icon.png")
+fi
+
 "$PLATYPUS_CLT" \
     --name "$APP_NAME" \
     --interface-type 'Text Window' \
@@ -43,6 +48,7 @@ BUNDLE_ID="org.supercollider.standalone.$(echo "$APP_NAME" | tr -d ' ' | tr '[:u
     --interpreter '/bin/bash' \
     --bundled-file "$BUNDLED_FILES" \
     --overwrite \
+    "${ICON_ARG[@]}" \
     "${EXTRA_PLATYPUS_ARGS[@]}" \
     "$REPO/run.sh" \
     "$OUTPUT_APP"
