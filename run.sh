@@ -13,13 +13,22 @@ done
 DIR=`pwd -P`
 SCRIPTPATH="$DIR"
 
-# Remove quarantine attributes
-xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/sclang" 2>/dev/null
-xattr -rd com.apple.quarantine "$SCRIPTPATH/Resources/scsynth" 2>/dev/null
-xattr -rd com.apple.quarantine "$SCRIPTPATH/QT_PlugIns" 2>/dev/null
+# Pick a name to namespace the per-app temp dir. When wrapped in a Platypus
+# .app, $SCRIPTPATH points at MyApp.app/Contents/Resources, so we walk up two
+# levels to derive the app name from the bundle.
+POTENTIAL_BUNDLE=$(cd "$SCRIPTPATH/../.." 2>/dev/null && pwd -P)
+if [[ "$POTENTIAL_BUNDLE" == *.app ]]; then
+    APPNAME=$(basename "$POTENTIAL_BUNDLE" .app)
+else
+    APPNAME=$(basename "$SCRIPTPATH")
+fi
 
-# Link the QT PlugIns
-export QT_PLUGIN_PATH="./QT_PlugIns"
+export QT_PLUGIN_PATH="$SCRIPTPATH/QT_PlugIns"
+
+# Write generated config files to a per-user, per-app temp dir. The app
+# bundle/project directory is not writable when handed to a different user.
+TMPWORKDIR="$TMPDIR/sc_standalone_$APPNAME"
+mkdir -p "$TMPWORKDIR/SystemOverwrites"
 
 # Generate scsynth settings
 # Relative paths are not allowed when running scsynth
@@ -44,15 +53,16 @@ echo "
 		// this.loadStartupFiles;
 	}
 
-}" > SystemOverwrites/plusOSX.sc;
+}" > "$TMPWORKDIR/SystemOverwrites/plusOSX.sc"
 
 # Generate the langconf file
 echo "includePaths:
-    - SystemOverwrites
-    - SCClassLibrary
+    - $TMPWORKDIR/SystemOverwrites
+    - $SCRIPTPATH/SCClassLibrary
 excludePaths:
     - $HOME/Library/Application Support/SuperCollider/Extensions
     - /Library/Application Support/SuperCollider/Extensions
     - /Applications/SuperCollider.app/Contents/Resources/SCClassLibrary
-postInlineWarnings: false" > langconf.yaml;
-./Resources/sclang -l langconf.yaml init.scd
+postInlineWarnings: false" > "$TMPWORKDIR/langconf.yaml"
+
+"$SCRIPTPATH/Resources/sclang" -l "$TMPWORKDIR/langconf.yaml" "$SCRIPTPATH/init.scd"
