@@ -1,17 +1,13 @@
 TARGET=$0
 cd $(dirname "$TARGET")
 TARGET=$(basename "$TARGET")
-# Iterate down a (possible) chain of symlinks
 while [ -L "$TARGET" ]
 do
     TARGET=$(readlink "$TARGET")
     cd $(dirname "$TARGET")
     TARGET=$(basename "$TARGET")
 done
-# Compute the canonicalized name by finding the physical path
-# for the directory we're in and appending the target file.
-DIR=`pwd -P`
-SCRIPTPATH="$DIR"
+SCRIPTPATH=$(pwd -P)
 
 # Strip quarantine attributes so macOS doesn't block the binaries on first run.
 # When distributed as a built .app this is handled at build time by build_app.sh,
@@ -63,7 +59,6 @@ echo "
 
 }" > "$TMPWORKDIR/SystemOverwrites/plusOSX.sc"
 
-# Generate the langconf file
 echo "includePaths:
     - $TMPWORKDIR/SystemOverwrites
     - $SCRIPTPATH/SCClassLibrary

@@ -18,7 +18,7 @@ Modified from [the linux version](https://github.com/miguel-negrao/scStandalone)
 
 6. Add any extensions you need to the `SCClassLibrary` folder.
 
-## Building a distributable app (for composers)
+## Building a distributable app
 
 Install [Platypus](https://sveinbjorn.org/platypus) (drag it to `/Applications/`). Then open Platypus, go to **Settings**, and click **Install** next to the command-line tool option. Once it shows "Command line tool is installed", run from the terminal:
 
@@ -40,14 +40,11 @@ To pass extra flags to Platypus (custom icon, hide post window, etc.) use `--`:
 
 See `platypus_clt --help` for the full list of available flags.
 
-## Running the app (for performers)
+## Running the app
 
 1. Download the `.app`.
 2. Right-click the app and choose **Open**. Click **Open** in the Gatekeeper dialog that appears.
 3. Allow microphone access if prompted.
-4. From then on the app launches normally with no extra steps.
-
-No admin password or terminal commands required.
 
 ## FAQ
 

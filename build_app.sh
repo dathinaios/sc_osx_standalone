@@ -1,13 +1,4 @@
 #!/bin/bash
-# Builds a SuperCollider standalone .app from this project.
-#
-# Usage:
-#   ./build_app.sh MyPiece               # uses init.scd in this folder
-#   ./build_app.sh MyPiece ./out         # custom output dir
-#   ./build_app.sh MyPiece ./out -- --app-icon my.icns  # extra Platypus flags
-#
-# See `platypus_clt --help` for available Platypus flags.
-
 set -e
 
 APP_NAME="${1:-SCStandalone}"
@@ -66,10 +57,4 @@ xattr -rd com.apple.quarantine "$OUTPUT_APP" 2>/dev/null || true
 
 codesign --deep --force --sign - "$OUTPUT_APP"
 
-echo
 echo "Built: $OUTPUT_APP"
-echo
-echo "Performer instructions:"
-echo "  1. Right-click the .app, choose Open, click Open in the Gatekeeper dialog."
-echo "  2. Allow microphone access if prompted."
-echo "  3. Future launches just work."
