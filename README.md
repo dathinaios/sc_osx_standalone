@@ -26,16 +26,16 @@ Install [Platypus](https://sveinbjorn.org/platypus) (drag it to `/Applications/`
 ./build_app.sh SC_Custom
 ```
 
-This produces `build/SC_Custom.app`, signed and ready to distribute. You can optionally specify a custom init script and output directory:
+This produces `build/SC_Custom.app`, signed and ready to distribute. You can optionally specify a custom output directory:
 
 ```
-./build_app.sh SC_Custom path/to/init.scd ./output_dir
+./build_app.sh SC_Custom ./output_dir
 ```
 
 To pass extra flags to Platypus (custom icon, hide post window, etc.) use `--`:
 
 ```
-./build_app.sh SC_Custom -- --interface-type None --app-icon my.icns
+./build_app.sh SC_Custom ./build -- --interface-type None --app-icon my.icns
 ```
 
 See `platypus_clt --help` for the full list of available flags.
