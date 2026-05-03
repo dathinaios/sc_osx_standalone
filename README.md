@@ -2,7 +2,7 @@
 
 Modified from [the linux version](https://github.com/miguel-negrao/scStandalone).
 
-[SuperCollider](http://supercollider.sourceforge.net/) version `3.12.2`
+[SuperCollider](http://supercollider.sourceforge.net/) version `3.14.1`
 
 ## Usage
 
@@ -23,7 +23,7 @@ Modified from [the linux version](https://github.com/miguel-negrao/scStandalone)
   - Click the `Select Script` button and choose the `run.sh` file.
   - Drag all the files from the `sc_osx_standalone-master` to the `Bundled Files` field.
   - Optional: to hide the post window change the interface option from `Text Window` to `None`.
-  - Click `Create` and choose the location for your app. 
+  - Click `Create` and choose the location for your app.
 
 ## FAQ
 
