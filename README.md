@@ -26,7 +26,7 @@ Install [Platypus](https://sveinbjorn.org/platypus) (drag it to `/Applications/`
 ./build_app.sh SC_Custom
 ```
 
-This produces `build/SC_Custom.app`, signed and ready to distribute. You can optionally specify a custom output directory:
+This produces `build/SC_Custom.app`, ready to distribute. You can optionally specify a custom output directory:
 
 ```
 ./build_app.sh SC_Custom ./output_dir
